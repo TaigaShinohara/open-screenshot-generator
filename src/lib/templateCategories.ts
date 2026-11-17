@@ -205,6 +205,19 @@ export const TEMPLATE_CATEGORIES: TemplateCategory[] = [
       'fg-productivity-tasks.json',
     ],
   },
+  {
+    id: 'taiga',
+    label: 'Taiga Custom',
+    blurb: 'Japanese store screenshots. Pick the Material Design 3 base or the Simple Glass base.',
+    defaultSize: { ...DEFAULT_CANVAS_SIZE },
+    previewAspect: '3 / 1',
+    previewFit: 'contain',
+    gridClassName: 'grid-cols-1 lg:grid-cols-2',
+    files: [
+      'taiga-md3.json',
+      'taiga-glass.json',
+    ],
+  },
 ];
 
 // Flat filename list for callers that just want every template file.

@@ -34,7 +34,7 @@ export interface LocaleDef {
 }
 
 /** What a project is written in until someone says otherwise. */
-export const DEFAULT_BASE_LOCALE = 'en-US';
+export const DEFAULT_BASE_LOCALE = 'ja'; // Taiga fork: Japanese first (upstream: 'en-US')
 
 /** Ordered by English name, which is the order the pickers show. */
 export const LOCALES: LocaleDef[] = [
