@@ -89,6 +89,10 @@ interface ExportDialogProps {
   // Hand off to the direct-to-store upload dialog. Optional so the export
   // dialog still stands alone if publishing is ever unavailable.
   onPublishToStore?: () => void;
+  /** Open the store listing preview directly from the release flow. */
+  onPreviewStore?: () => void;
+  /** Open the language manager directly from the release flow. */
+  onManageLanguages?: () => void;
   // The project's detected device format (null when mixed or none) and the
   // first artboard's size — used to tell the user what "as-is" produces and
   // which App Store sizes are missing.
@@ -140,6 +144,8 @@ export function ExportDialog({
   onOpenChange,
   onConfirmExport,
   onPublishToStore,
+  onPreviewStore,
+  onManageLanguages,
   currentFormat,
   currentSize,
   activeArtboard,
@@ -308,6 +314,40 @@ export function ExportDialog({
         </DialogHeader>
 
         <div className="grid gap-4 py-2">
+          {(onPreviewStore || onManageLanguages) && (
+            <div
+              data-testid="export-release-strip"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs"
+            >
+              <span className="text-muted-foreground">
+                {artboardCount} {artboardCount === 1 ? 'artboard' : 'artboards'}
+                {' · '}
+                {showLocales
+                  ? `${projectLocales.length} languages`
+                  : `${localeName(activeExportLocale)} only`}
+              </span>
+              <div className="flex items-center gap-3">
+                {onManageLanguages && (
+                  <button
+                    type="button"
+                    onClick={onManageLanguages}
+                    className="font-medium text-primary underline-offset-4 hover:underline"
+                  >
+                    {showLocales ? 'Manage languages' : 'Add languages'}
+                  </button>
+                )}
+                {onPreviewStore && (
+                  <button
+                    type="button"
+                    onClick={onPreviewStore}
+                    className="font-medium text-primary underline-offset-4 hover:underline"
+                  >
+                    Store preview
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           <div className="flex items-start space-x-2">
             <Checkbox
               id="export-as-is"

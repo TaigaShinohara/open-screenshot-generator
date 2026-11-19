@@ -221,6 +221,7 @@ import { captureTargets } from '@/lib/capture/frames';
 import { placeClip, placeShots, type ClipPlacement, type ShotPlacement } from '@/lib/capture/place';
 import { deviceForQuickCapture, shootDevice } from '@/lib/capture/shoot';
 import { ActivityBar, type ActivityId } from './ActivityBar';
+import { ExportSummaryCard, type ExportSummaryData } from './ExportSummaryCard';
 import { getGrowthSettings, setGrowthSettings } from '@/lib/growth/settings';
 import { useGrowthMonitor } from '@/lib/growth/useGrowthMonitor';
 import { storeOf } from '@/lib/growth/stores';
@@ -1613,6 +1614,7 @@ export function OpenScreenshotGeneratorLayout() {
     setIsPreviewOpen(true);
   }, []);
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  const [exportSummary, setExportSummary] = useState<ExportSummaryData | null>(null);
   // Direct-to-store upload (App Store Connect / Google Play). Desktop only,
   // see src/lib/publish; the dialog explains itself on the web build.
   const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
@@ -6190,6 +6192,23 @@ export function OpenScreenshotGeneratorLayout() {
       setIsCancellingPngExport(false);
       const cancelled = pngExportCancelRef.current;
       pngExportCancelRef.current = false;
+
+      if (saved.length > 0 && !cancelled) {
+        const baseSize = screenshotBoards(original)[0]?.size ?? original[0]?.size;
+        const formatLabels: string[] = [];
+        if (asIs && baseSize) formatLabels.push(`${baseSize.width}×${baseSize.height}`);
+        for (const formatId of generateFormats) {
+          const preset = DEVICE_FORMAT_PRESETS.find((entry) => entry.id === formatId);
+          if (preset) formatLabels.push(`${preset.artboard.width}×${preset.artboard.height}`);
+        }
+        setExportSummary({
+          fileCount: saved.length,
+          languages: locales ?? [],
+          formatLabels,
+          destination: exportDir ?? saved[0]?.path ?? null,
+          isDesktop: isTauri(),
+        });
+      }
 
       // One summary instead of a toast per file. A single-file export names
       // where it went, which is the useful bit on desktop.
@@ -12940,6 +12959,14 @@ const generateRandomProjectName = (): string => {
                 setIsExportDialogOpen(false);
                 setIsPublishDialogOpen(true);
               }}
+              onPreviewStore={() => {
+                setIsExportDialogOpen(false);
+                openPreview('store');
+              }}
+              onManageLanguages={() => {
+                setIsExportDialogOpen(false);
+                setIsLanguageManagerOpen(true);
+              }}
               currentFormat={activeDeviceFormat}
               currentSize={screenshotBoards(artboards)[0]?.size ?? artboards[0]?.size}
               activeArtboard={activeArtboardSummary}
@@ -12951,6 +12978,15 @@ const generateRandomProjectName = (): string => {
               activeLocale={activeLocale}
             />
           )}
+
+          <ExportSummaryCard
+            summary={exportSummary}
+            onDismiss={() => setExportSummary(null)}
+            onPublishToStore={() => setIsPublishDialogOpen(true)}
+            onPreviewStore={() => openPreview('store')}
+            onManageLanguages={() => setIsLanguageManagerOpen(true)}
+            onOpenWebsite={() => selectActivity('website')}
+          />
 
           <ExportProgressDialog
             progress={pngProgress}
@@ -12978,6 +13014,10 @@ const generateRandomProjectName = (): string => {
             onOpenGrowth={() => {
               setIsPublishDialogOpen(false);
               showGrowth('overview');
+            }}
+            onOpenWebsite={() => {
+              setIsPublishDialogOpen(false);
+              selectActivity('website');
             }}
           />
 
