@@ -66,8 +66,10 @@ function agentDialog(page: Page) {
 }
 
 async function openAgentScreen(page: Page, startDialog: ReturnType<Page['getByRole']>) {
-  await startDialog.getByRole('button', { name: /Start with the AI agent/i }).click();
   const dialog = agentDialog(page);
+  if (!(await dialog.isVisible().catch(() => false))) {
+    await startDialog.getByRole('button', { name: /Start with the AI agent|Back to AI agent/i }).click();
+  }
   await expect(dialog).toBeVisible();
   return dialog;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useRef, useState } from 'react';
-import { ImagePlus, Loader2, X } from 'lucide-react';
+import { Camera, ImagePlus, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { AGENT_LIMITS } from '@/lib/ai/agentPlanSchema';
@@ -11,6 +11,10 @@ interface ScreenshotUploaderProps {
   screenshots: UploadedScreenshot[];
   onChange: (screenshots: UploadedScreenshot[]) => void;
   disabled?: boolean;
+  /** Maximum screenshots allowed in this mode (10 for CLI agents, 3 for API/Web/Free). */
+  maxScreenshots?: number;
+  /** Desktop: jump to simulator/emulator capture directly from the upload zone. */
+  onCaptureFromSimulator?: () => void;
 }
 
 /**
@@ -18,7 +22,13 @@ interface ScreenshotUploaderProps {
  * `screenshotIndex` the agent plan refers to, and it is also the order the user
  * must attach files in when they run the manual relay steps.
  */
-export function ScreenshotUploader({ screenshots, onChange, disabled }: ScreenshotUploaderProps) {
+export function ScreenshotUploader({
+  screenshots,
+  onChange,
+  disabled,
+  maxScreenshots = AGENT_LIMITS.maxScreenshots,
+  onCaptureFromSimulator,
+}: ScreenshotUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isReading, setIsReading] = useState(false);
@@ -29,9 +39,9 @@ export function ScreenshotUploader({ screenshots, onChange, disabled }: Screensh
       const images = Array.from(files).filter((file) => file.type.startsWith('image/'));
       if (images.length === 0) return;
 
-      const room = AGENT_LIMITS.maxScreenshots - screenshots.length;
+      const room = maxScreenshots - screenshots.length;
       if (room <= 0) {
-        setError(`You can add at most ${AGENT_LIMITS.maxScreenshots} screenshots.`);
+        setError(`You can add at most ${maxScreenshots} screenshots.`);
         return;
       }
 
@@ -42,7 +52,7 @@ export function ScreenshotUploader({ screenshots, onChange, disabled }: Screensh
         const read = await Promise.all(accepted.map(readScreenshotFile));
         onChange([...screenshots, ...read]);
         if (images.length > accepted.length) {
-          setError(`Only the first ${accepted.length} images were added (limit ${AGENT_LIMITS.maxScreenshots}).`);
+          setError(`Only the first ${accepted.length} images were added (limit ${maxScreenshots}).`);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Those images could not be read.');
@@ -50,7 +60,7 @@ export function ScreenshotUploader({ screenshots, onChange, disabled }: Screensh
         setIsReading(false);
       }
     },
-    [onChange, screenshots]
+    [maxScreenshots, onChange, screenshots]
   );
 
   const remove = (id: string) => onChange(screenshots.filter((shot) => shot.id !== id));
@@ -84,18 +94,31 @@ export function ScreenshotUploader({ screenshots, onChange, disabled }: Screensh
         <p className="text-sm text-muted-foreground">
           Drop your app screenshots here, or
         </p>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={disabled || isReading}
-          onClick={() => inputRef.current?.click()}
-        >
-          Choose files
-        </Button>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={disabled || isReading}
+            onClick={() => inputRef.current?.click()}
+          >
+            Choose files
+          </Button>
+          {onCaptureFromSimulator && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={disabled || isReading}
+              onClick={onCaptureFromSimulator}
+            >
+              <Camera className="mr-1.5 h-3.5 w-3.5" />
+              Capture from simulator
+            </Button>
+          )}
+        </div>
         <p className="text-xs text-muted-foreground">
-          PNG or JPG, up to {AGENT_LIMITS.maxScreenshots}. Order matters: the agent refers to them by
-          number.
+          PNG or JPG, up to {maxScreenshots}. Order matters: the agent refers to them by number.
         </p>
         <input
           ref={inputRef}

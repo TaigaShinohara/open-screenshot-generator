@@ -647,7 +647,7 @@ function hydrate(): void {
   const codexEffort =
     storedCodexEffort && CODEX_EFFORTS.includes(storedCodexEffort) ? storedCodexEffort : DEFAULT_CODEX_EFFORT;
   const newChatAgent = sanitizeAgent(readStorage(AGENT_KEY));
-  const panelEnabled = readStorage(PANEL_KEY) === '1';
+  const panelEnabled = readStorage(PANEL_KEY) !== '0';
   try {
     contextWindows = sanitizeContextWindows(JSON.parse(readStorage(WINDOWS_KEY) ?? 'null'));
   } catch {
@@ -1990,7 +1990,7 @@ function setEffort(effort: ClaudeEffortChoice): void {
 function setPanelEnabled(enabled: boolean): void {
   hydrate();
   if (enabled === snapshot.panelEnabled) return;
-  writeStorage(PANEL_KEY, enabled ? '1' : null);
+  writeStorage(PANEL_KEY, enabled ? '1' : '0');
   set({ panelEnabled: enabled }, { immediate: true });
 }
 
@@ -2048,7 +2048,7 @@ export const claudeAgent = {
  */
 export function readAgentPanelEnabled(): boolean {
   if (typeof window === 'undefined') return false;
-  return readStorage(PANEL_KEY) === '1' && isTauri();
+  return readStorage(PANEL_KEY) !== '0' && isTauri();
 }
 
 export function useClaudeAgent(): ClaudeAgentSnapshot {

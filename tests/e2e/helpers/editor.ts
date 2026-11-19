@@ -60,23 +60,39 @@ export class Editor {
 
   // ------------------------------------------------------------ start screen
 
-  /** The "Start a new project" dialog, which opens on an empty database. */
+  /** The start dialog, which opens on an empty database (AI agent by default). */
   get startDialog(): Locator {
-    return this.page.getByRole('dialog').filter({ hasText: /Start a new project|blank canvas/i });
+    return this.page
+      .getByRole('dialog')
+      .filter({ hasText: /Design with the AI agent|Start a new project|blank canvas/i });
   }
 
   /**
-   * Wait until the start dialog actually has its catalogue.
-   *
-   * The app fetches all 101 template JSON files on boot just to fill in the
-   * per-category counts, and until they land the tabs read a literal ellipsis
-   * and the deck renders skeletons. Clicking through before then is not broken,
-   * only queued behind that work, but with several browser contexts booting at
-   * once they saturate the dev server and the queue outlasts a plain timeout.
-   * Waiting for a numeric count is waiting for the dialog to mean what it says.
+   * Wait until the start dialog has finished loading its template catalogue.
+   * Opens on the AI agent screen by default; switches to "More ways to start"
+   * when a caller needs templates or blank canvas.
    */
   async waitForStartDialogReady(): Promise<void> {
     await expect(this.startDialog).toBeVisible({ timeout: 30_000 });
+    const moreWays = this.startDialog.getByRole('button', { name: 'More ways to start', exact: true });
+    if (await moreWays.isVisible().catch(() => false)) {
+      await expect(this.startDialog.getByRole('button', { name: 'Choose files' })).toBeVisible({
+        timeout: 90_000,
+      });
+      return;
+    }
+    await expect(
+      this.startDialog.getByRole('tab', { name: /App Screenshots\s*\d+/ })
+    ).toBeVisible({ timeout: 90_000 });
+  }
+
+  /** Switch from the AI-first start screen to the templates/blank/recent view if needed. */
+  async openTemplatesInStartDialog(): Promise<void> {
+    await this.waitForStartDialogReady();
+    const moreWays = this.startDialog.getByRole('button', { name: 'More ways to start', exact: true });
+    if (await moreWays.isVisible().catch(() => false)) {
+      await moreWays.click();
+    }
     await expect(
       this.startDialog.getByRole('tab', { name: /App Screenshots\s*\d+/ })
     ).toBeVisible({ timeout: 90_000 });
@@ -84,7 +100,7 @@ export class Editor {
 
   /** Take the blank-canvas path out of the start dialog. */
   async startBlankProject(): Promise<void> {
-    await this.waitForStartDialogReady();
+    await this.openTemplatesInStartDialog();
     const blank = this.page.getByRole('button', { name: /Start with a blank canvas/i }).first();
     await expect(blank).toBeVisible({ timeout: 30_000 });
     await blank.click();
@@ -122,8 +138,8 @@ export class Editor {
 
   /**
    * Make sure the element palette is on screen.
-   * Below the `lg` breakpoint it lives in a collapsible sidebar behind a
-   * trigger, so a narrow viewport has to open it first.
+   * The left palette starts collapsed by default, so click the toolbar toggle
+   * when the Elements tab is not visible yet.
    */
   async ensurePaletteOpen(): Promise<void> {
     if (await this.paletteTab('Elements').isVisible().catch(() => false)) return;
@@ -227,6 +243,7 @@ export class Editor {
    * so the title is the only handle that cannot collide with the label text.
    */
   async openPaletteCategory(label: string): Promise<void> {
+    await this.ensurePaletteOpen();
     await this.page.getByTitle(`Browse ${label}`).click();
   }
 

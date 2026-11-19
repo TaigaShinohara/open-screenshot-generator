@@ -96,7 +96,34 @@ interface AgentStartScreenProps {
     /** Which CLI the chat talks to. Claude Code when left out. */
     agent?: AgentKind;
   }) => Promise<void>;
+  /** Desktop: jump straight to simulator/emulator capture from the upload zone. */
+  onCaptureFromSimulator?: () => void;
 }
+
+const CLI_MAX_SCREENSHOTS = 10;
+
+const MODE_CAPABILITY_NOTES: Record<string, { desktop: string; web: string }> = {
+  'claude-code': {
+    desktop: 'Reads your app code folders, edits the live canvas directly, and takes up to 10 screenshots.',
+    web: 'Desktop app only. Reads your app code folders, edits the live canvas directly, and takes up to 10 screenshots.',
+  },
+  codex: {
+    desktop: 'Edits the live canvas directly via MCP and takes up to 10 screenshots.',
+    web: 'Desktop app only. Edits the live canvas directly via MCP and takes up to 10 screenshots.',
+  },
+  web: {
+    desktop: 'Uses your existing ChatGPT, Claude, or Gemini web session in an embedded window. Uses up to 3 screenshots.',
+    web: 'Runs with your existing ChatGPT, Claude, or Gemini account. Uses up to 3 screenshots.',
+  },
+  free: {
+    desktop: 'Built-in free hosted models with zero API key setup. Uses up to 3 screenshots.',
+    web: 'Desktop app only. Built-in free hosted models with zero API key setup.',
+  },
+  api: {
+    desktop: 'Connects to your own OpenAI, Anthropic, Gemini key or a local Ollama server. Uses up to 3 screenshots.',
+    web: 'Connects to your own OpenAI, Anthropic, Gemini key or a local Ollama server. Uses up to 3 screenshots.',
+  },
+};
 
 const EXAMPLE_INSTRUCTIONS = [
   'Put my screenshots into the template that fits them best',
@@ -125,6 +152,7 @@ export function AgentStartScreen({
   handoffScreenshots,
   handoffToken,
   onStartClaudeCode,
+  onCaptureFromSimulator,
 }: AgentStartScreenProps) {
   const [screenshots, setScreenshots] = useState<UploadedScreenshot[]>([]);
   /**
@@ -135,13 +163,11 @@ export function AgentStartScreen({
 
   // Seeded in an effect keyed on the token, never in the state initialiser:
   // coming back to this screen must not clobber a set the user edited here.
-  // Sliced to the agent's own cap, which exists because the prompt quotes its
-  // per-image budget to the provider. A template fill has no such budget, which
-  // is why the two limits are different numbers and stay that way.
+  // CLI modes can take up to 10 screenshots; non-CLI modes slice to 3 on run.
   useEffect(() => {
     if (!handoffToken || !handoffScreenshots?.length) return;
     setHandedOver(handoffScreenshots.length);
-    setScreenshots(handoffScreenshots.slice(0, AGENT_LIMITS.maxScreenshots));
+    setScreenshots(handoffScreenshots.slice(0, CLI_MAX_SCREENSHOTS));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handoffToken]);
   const [instruction, setInstruction] = useState('');
@@ -173,6 +199,15 @@ export function AgentStartScreen({
     if (isTauri()) setDesktop(true);
   }, []);
 
+  const isCliMode = mode === 'claude-code' || mode === 'codex';
+  const uploaderMaxScreenshots = isCliMode ? CLI_MAX_SCREENSHOTS : AGENT_LIMITS.maxScreenshots;
+  // Non-CLI modes (API, Web, Free) keep a 3-screenshot prompt budget; CLI modes
+  // (Claude Code, Codex) can attach up to 10 screenshots.
+  const planScreenshots = useMemo(
+    () => screenshots.slice(0, AGENT_LIMITS.maxScreenshots),
+    [screenshots]
+  );
+
   // Compact two-tier catalog + the alias map that turns the reply's short
   // refs (t12/d0/x1) back into real ids. Built in one pass so they can't
   // drift; falls back to the legacy full catalog if anything goes wrong.
@@ -180,13 +215,13 @@ export function AgentStartScreen({
     if (isLoadingTemplates) return null;
     try {
       return buildCatalogArtifacts(buildTemplateCatalog(templates), {
-        screenshots: screenshots.map((shot) => ({ width: shot.width, height: shot.height })),
+        screenshots: planScreenshots.map((shot) => ({ width: shot.width, height: shot.height })),
         instruction,
       });
     } catch {
       return null;
     }
-  }, [templates, isLoadingTemplates, screenshots, instruction]);
+  }, [templates, isLoadingTemplates, planScreenshots, instruction]);
 
   const catalogText = useMemo(
     () =>
@@ -196,8 +231,8 @@ export function AgentStartScreen({
   );
 
   const relayPrompt = useMemo(
-    () => buildRelayPrompt(catalogText, instruction, screenshots.length),
-    [catalogText, instruction, screenshots.length]
+    () => buildRelayPrompt(catalogText, instruction, planScreenshots.length),
+    [catalogText, instruction, planScreenshots.length]
   );
 
   // The repo-hosted catalog twin: same text and refs the deployed
@@ -338,7 +373,7 @@ export function AgentStartScreen({
         providerLabel: describeEndpoint(args.provider, args.baseUrl),
         model: args.model,
         instruction,
-        screenshotCount: screenshots.length,
+        screenshotCount: planScreenshots.length,
       });
       let status: OperationStatus = 'error';
       try {
@@ -347,7 +382,7 @@ export function AgentStartScreen({
             `provider: ${args.provider}`,
             args.baseUrl ? `endpoint: ${args.baseUrl}` : null,
             `model: ${args.model}`,
-            `screenshots: ${screenshots.length}`,
+            `screenshots: ${planScreenshots.length}`,
             '',
             instruction,
           ]
@@ -357,7 +392,7 @@ export function AgentStartScreen({
         const plan = await generatePlan({
           ...args,
           instruction,
-          screenshots,
+          screenshots: planScreenshots,
           templates,
           signal: controller.signal,
         });
@@ -384,7 +419,7 @@ export function AgentStartScreen({
         void recorder.finish(status);
       }
     },
-    [acceptPlan, instruction, screenshots, templates]
+    [acceptPlan, instruction, planScreenshots, templates]
   );
 
   const runWebSession = useCallback(
@@ -403,7 +438,7 @@ export function AgentStartScreen({
         provider,
         providerLabel: WEB_PROVIDERS[provider].label,
         instruction,
-        screenshotCount: screenshots.length,
+        screenshotCount: planScreenshots.length,
       });
       let status: OperationStatus = 'error';
       const applyOutcome = (outcome: PlanOutcome) => {
@@ -426,7 +461,7 @@ export function AgentStartScreen({
         const send = async (prompt: string, label: string) => {
           const images = imagesSent
             ? []
-            : screenshots.map((shot) => ({ fileName: shot.fileName, dataUrl: shot.aiDataUrl }));
+            : planScreenshots.map((shot) => ({ fileName: shot.fileName, dataUrl: shot.aiDataUrl }));
           imagesSent = true;
           recorder.message('app-to-provider', label, { detail: prompt });
           const reply = await runViaEmbeddedWebview(
@@ -552,7 +587,7 @@ export function AgentStartScreen({
         providerLabel: FREE_PROVIDERS[args.provider].label,
         model: args.model,
         instruction,
-        screenshotCount: screenshots.length,
+        screenshotCount: planScreenshots.length,
       });
       let status: OperationStatus = 'error';
       try {
@@ -560,7 +595,7 @@ export function AgentStartScreen({
         const reply = await runFreeProvider({
           ...args,
           prompt: relayPrompt,
-          images: screenshots.map((shot) => shot.aiDataUrl),
+          images: planScreenshots.map((shot) => shot.aiDataUrl),
           signal: controller.signal,
         });
         recorder.message('provider-to-app', 'Reply received', { detail: reply });
@@ -630,10 +665,21 @@ export function AgentStartScreen({
     <div className="space-y-6 pb-2">
       <section className="space-y-2">
         <Label className="text-sm font-bold">1. Add your app screenshots</Label>
-        <ScreenshotUploader screenshots={screenshots} onChange={setScreenshots} disabled={busy} />
-        {handedOver > AGENT_LIMITS.maxScreenshots && (
+        <ScreenshotUploader
+          screenshots={screenshots}
+          onChange={setScreenshots}
+          disabled={busy}
+          maxScreenshots={uploaderMaxScreenshots}
+          onCaptureFromSimulator={desktop ? onCaptureFromSimulator : undefined}
+        />
+        {handedOver > CLI_MAX_SCREENSHOTS && (
           <p className="text-xs text-muted-foreground">
-            {`Only the first ${AGENT_LIMITS.maxScreenshots} go to the agent. The rest are still on the quick start screen`}
+            {`Only the first ${CLI_MAX_SCREENSHOTS} go to the agent. The rest are still on the quick start screen`}
+          </p>
+        )}
+        {!isCliMode && screenshots.length > AGENT_LIMITS.maxScreenshots && (
+          <p className="text-xs text-muted-foreground">
+            {`This mode uses the first ${AGENT_LIMITS.maxScreenshots} screenshots. Switch to Claude Code or Codex to send up to ${CLI_MAX_SCREENSHOTS}.`}
           </p>
         )}
         {/* On every tab, so picking a mode below never moves this row. */}
@@ -718,6 +764,11 @@ export function AgentStartScreen({
               Use my API key
             </TabsTrigger>
           </TabsList>
+          {MODE_CAPABILITY_NOTES[mode] && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {desktop ? MODE_CAPABILITY_NOTES[mode].desktop : MODE_CAPABILITY_NOTES[mode].web}
+            </p>
+          )}
           <TabsContent value="claude-code" className="mt-4">
             <ClaudeCodeModePanel
               desktop={desktop}
@@ -753,7 +804,7 @@ export function AgentStartScreen({
           {desktop && (
             <TabsContent value="free" className="mt-4">
               <FreeProviderModePanel
-                screenshotCount={screenshots.length}
+                screenshotCount={planScreenshots.length}
                 busy={busy}
                 disabled={screenshots.length === 0 && !instruction.trim()}
                 onGenerate={(args) => void runFreeMode(args)}
@@ -765,7 +816,7 @@ export function AgentStartScreen({
             <ApiKeyModePanel
               busy={busy}
               disabled={screenshots.length === 0 && !instruction.trim()}
-              screenshotCount={screenshots.length}
+              screenshotCount={planScreenshots.length}
               onGenerate={(args) => void runApiMode(args)}
               onCancel={cancel}
             />

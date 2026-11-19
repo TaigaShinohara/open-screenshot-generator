@@ -211,6 +211,7 @@ export function SettingsDialog({ open, onOpenChange, onOpenTips }: SettingsDialo
   const [wheelZoom, setWheelZoom] = useEditorPreference('wheelZoom');
   const [creativeSafeArea, setCreativeSafeArea] = useEditorPreference('creativeSafeArea');
   const [confirmTabClose, setConfirmTabClose] = useEditorPreference('confirmTabClose');
+  const [detailedEditor, setDetailedEditor] = useEditorPreference('detailedEditor');
   const contentRef = useRef<HTMLDivElement>(null);
 
   // localStorage is only readable after mount, and the wizard's own checkbox
@@ -263,6 +264,18 @@ export function SettingsDialog({ open, onOpenChange, onOpenTips }: SettingsDialo
           </SettingsSection>
 
           <SettingsSection title="Canvas">
+            <SettingsRow
+              label="Show detailed editor controls"
+              description="Keeps advanced layout and inspector controls visible by default"
+              htmlFor="settings-detailed-editor"
+              control={
+                <Switch
+                  id="settings-detailed-editor"
+                  checked={detailedEditor}
+                  onCheckedChange={setDetailedEditor}
+                />
+              }
+            />
             <SettingsRow
               label="Zoom with the mouse wheel"
               description="Scroll the mouse wheel to zoom. Trackpad scrolling stays the same. Ctrl or Cmd with the wheel always zooms"

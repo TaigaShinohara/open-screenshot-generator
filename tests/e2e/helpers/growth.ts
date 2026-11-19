@@ -27,9 +27,10 @@ export function viewButton(page: Page, name: 'Editor' | typeof GROWTH_BUTTON): L
   return views(page).getByRole('button', { name, exact: true });
 }
 
-/** Switch to Growth with the activity bar. */
+/** Switch to Growth with the activity bar's More tools menu. */
 export async function openGrowth(page: Page): Promise<Locator> {
-  await viewButton(page, GROWTH_BUTTON).click();
+  await views(page).getByRole('button', { name: 'More tools', exact: true }).click();
+  await page.getByRole('menuitem', { name: GROWTH_BUTTON, exact: true }).click();
   const view = page.getByTestId('growth-view');
   await expect(view).toBeVisible();
   return view;

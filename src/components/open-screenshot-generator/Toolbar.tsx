@@ -216,7 +216,7 @@ export function Toolbar({
       {/* The palette is off-canvas on a phone (the sidebar turns into a sheet
           below md), so it needs a way back in. On desktop the sidebar has its
           own rail and this would be a second control for the same thing. */}
-      <SidebarTrigger className="h-9 w-9 shrink-0 lg:hidden" title="Open elements palette" />
+      <SidebarTrigger className="h-9 w-9 shrink-0" title="Open elements palette" />
 
       {/* Adding an artboard lives on the artboard itself ("Add New Artboard
           After" in its hover toolbar), which is also where the new board ends

@@ -1165,11 +1165,11 @@ export function OpenScreenshotGeneratorLayout() {
   const [collabInvite, setCollabInvite] = useState<CollabInvite | null>(null);
   /** Which project the open room belongs to, so switching project leaves it. */
   const collabProjectRef = useRef<string | null>(null);
-  // Which screen of the start dialog is showing. The template gallery is the
-  // dialog, as it always was; the agent is a screen you step into from the
-  // banner above it. Reset on open so reopening never lands mid-agent-flow.
+  // Which screen of the start dialog is showing. Opens on the AI agent by
+  // default so users can drop screenshots and generate a full set in one step,
+  // with "More ways to start" leading to templates, quick start and recent projects.
   const [dialogView, setDialogView] = useState<'templates' | 'agent' | 'quickstart' | 'graphics'>(
-    'templates'
+    'agent'
   );
   // Latches once the quick start has been opened, so it can stay mounted behind
   // the other views without being built for every session that never uses it.
@@ -1190,14 +1190,14 @@ export function OpenScreenshotGeneratorLayout() {
   // view and reads as a dead end.
   const [agentReturnView, setAgentReturnView] = useState<'templates' | 'quickstart'>('templates');
   /**
-   * Opens the start dialog on a given view, defaulting to the template gallery.
+   * Opens the start dialog on a given view, defaulting to the AI agent.
    *
    * Every open goes through here rather than flipping `isTemplateSelectorOpen`
    * on its own: the dialog keeps whichever view it was closed on, so reopening
    * it from the toolbar used to land mid-flow — on the quick start screen, say,
    * with Back the only way out — instead of at the start it was asked for.
    */
-  const openStartDialog = useCallback((view: 'templates' | 'quickstart' | 'graphics' = 'templates') => {
+  const openStartDialog = useCallback((view: 'agent' | 'templates' | 'quickstart' | 'graphics' = 'agent') => {
     setDialogView(view);
     setAgentReturnView('templates');
     setIsTemplateSelectorOpen(true);
@@ -2748,6 +2748,7 @@ export function OpenScreenshotGeneratorLayout() {
     }
     commitRefusalRef.current = null;
     const repositionedArtboards = calculateArtboardPositions(updatedArtboards);
+    artboardsRef.current = repositionedArtboards;
     setArtboards(repositionedArtboards); // Update React state first
     noteVersionCheckpoint(repositionedArtboards);
     // Into the room, if there is one. A no-op otherwise, and cheap when there
@@ -10115,17 +10116,19 @@ const generateRandomProjectName = (): string => {
             {dialogView === 'agent' || dialogView === 'quickstart' || dialogView === 'graphics' ? (
               <DialogHeader>
                 <div className="flex items-start gap-2">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="-ml-2 h-8 w-8 shrink-0"
-                    onClick={() =>
-                      setDialogView(dialogView === 'agent' ? agentReturnView : 'templates')
-                    }
-                    aria-label="Back"
-                  >
-                    <ChevronLeftIcon className="h-4 w-4" />
-                  </Button>
+                  {(dialogView !== 'agent' || agentReturnView === 'quickstart') && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="-ml-2 h-8 w-8 shrink-0"
+                      onClick={() =>
+                        setDialogView(dialogView === 'agent' ? agentReturnView : 'templates')
+                      }
+                      aria-label="Back"
+                    >
+                      <ChevronLeftIcon className="h-4 w-4" />
+                    </Button>
+                  )}
                   <div className="min-w-0 flex-1 text-left">
                     <DialogTitle>
                       {dialogView === 'agent'
@@ -10142,18 +10145,39 @@ const generateRandomProjectName = (): string => {
                           : 'Drop them in and every design that fits shows your own screens. Pick one to open it.'}
                     </DialogDescription>
                   </div>
+                  {dialogView === 'agent' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => setDialogView('templates')}
+                    >
+                      More ways to start
+                    </Button>
+                  )}
                 </div>
               </DialogHeader>
             ) : (
-              // The two entry cards below say all of this, so the heading is only
-              // kept for the dialog's accessible name. sr-only takes it out of
-              // flow, so it costs no vertical space either.
-              <>
+              // The templates / blank / recent view keeps a quick return to the
+              // default AI agent start screen.
+              <div className="flex items-center justify-between gap-2 pb-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="-ml-2 gap-1.5 text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setAgentReturnView('templates');
+                    setDialogView('agent');
+                  }}
+                >
+                  <ChevronLeftIcon className="h-4 w-4" />
+                  Back to AI agent
+                </Button>
                 <DialogTitle className="sr-only">Start a new project</DialogTitle>
                 <DialogDescription className="sr-only">
                   Let the AI agent build it, choose a template, or start with a blank canvas.
                 </DialogDescription>
-              </>
+              </div>
             )}
 
             {dialogView === 'agent' && (
@@ -10167,6 +10191,10 @@ const generateRandomProjectName = (): string => {
                   handoffScreenshots={agentHandoff?.shots}
                   handoffToken={agentHandoff?.token}
                   onStartClaudeCode={handleStartClaudeCode}
+                  onCaptureFromSimulator={() => {
+                    setIsTemplateSelectorOpen(false);
+                    selectActivity('capture');
+                  }}
                 />
               </div>
             )}
@@ -12168,7 +12196,7 @@ const generateRandomProjectName = (): string => {
             projectStep={projectLoadStatus}
           />
           <Toolbar
-            onSelectTemplate={() => openStartDialog()}
+            onSelectTemplate={() => openStartDialog('templates')}
             onDropInScreenshots={() => openStartDialog('quickstart')}
             onMakeGraphics={() => openStartDialog('graphics')}
             onMakeStoreArt={() => openCreativeDialog(false)}

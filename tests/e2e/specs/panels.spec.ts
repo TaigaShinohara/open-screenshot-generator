@@ -143,8 +143,8 @@ test.describe('right dock', () => {
     await page.getByTitle('Panel and display options').click();
 
     const expected = ['open all panels in a window', 'properties', 'history', 'versions', 'layers'];
-    // The desktop app also offers the agent, Claude Code or Codex, until its tab is on.
-    if (isDesktop) expected.unshift('chat with claude code', 'chat with codex');
+    // On desktop the Agent dock tab is enabled by default, so it appears in the panel list.
+    if (isDesktop) expected.splice(1, 0, 'agent');
     // Chromium can be asked for the Window Management permission; WebKit and
     // the desktop shell cannot, and the desktop does not need to.
     const canAskForDisplays = !isDesktop && (await page.evaluate(() => 'getScreenDetails' in window));

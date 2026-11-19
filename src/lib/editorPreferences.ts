@@ -36,7 +36,9 @@ export type EditorPreference =
   /** Desktop: look for a new version of the app in the background. */
   | 'updatesAutoCheck'
   /** Desktop: take beta versions of the app as well as stable ones. */
-  | 'updatesBeta';
+  | 'updatesBeta'
+  /** Show advanced canvas and layout controls by default. */
+  | 'detailedEditor';
 
 const KEYS: Record<EditorPreference, string> = {
   cloudAutoSave: 'open-screenshot-generator.cloud-auto-save',
@@ -46,6 +48,7 @@ const KEYS: Record<EditorPreference, string> = {
   confirmTabClose: 'open-screenshot-generator.confirm-tab-close',
   updatesAutoCheck: 'open-screenshot-generator.updates-auto-check',
   updatesBeta: 'open-screenshot-generator.updates-beta',
+  detailedEditor: 'open-screenshot-generator.detailed-editor',
 };
 
 /**
@@ -71,6 +74,9 @@ const KEYS: Record<EditorPreference, string> = {
  * to look for it is one most people never get. It only ever downloads; the
  * restart is still the user's to choose. Beta versions are off, because they
  * are the ones that have not been through everybody's hands yet.
+ *
+ * Detailed editor mode is OFF by default so the workspace stays calm and
+ * focused on the core screenshot flow.
  */
 const DEFAULTS: Record<EditorPreference, boolean> = {
   cloudAutoSave: false,
@@ -80,6 +86,7 @@ const DEFAULTS: Record<EditorPreference, boolean> = {
   confirmTabClose: true,
   updatesAutoCheck: true,
   updatesBeta: false,
+  detailedEditor: false,
 };
 
 const cache = new Map<EditorPreference, boolean>();
