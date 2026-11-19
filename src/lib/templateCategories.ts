@@ -207,8 +207,8 @@ export const TEMPLATE_CATEGORIES: TemplateCategory[] = [
   },
   {
     id: 'taiga',
-    label: 'Taiga Custom',
-    blurb: 'Japanese store screenshots. Pick the Material Design 3 base or the Simple Glass base.',
+    label: 'Modern styles',
+    blurb: 'Store screenshots in Material Design 3 or Simple Glass style.',
     defaultSize: { ...DEFAULT_CANVAS_SIZE },
     previewAspect: '3 / 1',
     previewFit: 'contain',

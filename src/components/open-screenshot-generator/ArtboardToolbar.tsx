@@ -65,7 +65,7 @@ export function ArtboardToolbar({
       >
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" className="w-7 h-7" onClick={onAddNew}>
+            <Button variant="ghost" size="icon" aria-label="Add artboard after" className="w-7 h-7" onClick={onAddNew}>
               <PlusSquareIcon className="w-4 h-4" />
             </Button>
           </TooltipTrigger>
@@ -93,7 +93,7 @@ export function ArtboardToolbar({
 
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => onDuplicate(artboardId)}>
+            <Button variant="ghost" size="icon" aria-label="Duplicate artboard" className="w-7 h-7" onClick={() => onDuplicate(artboardId)}>
               <CopyIcon className="w-4 h-4" />
             </Button>
           </TooltipTrigger>
@@ -103,7 +103,7 @@ export function ArtboardToolbar({
         {onExport && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => onExport(artboardId)}>
+              <Button variant="ghost" size="icon" aria-label="Export this artboard" className="w-7 h-7" onClick={() => onExport(artboardId)}>
                 <DownloadIcon className="w-4 h-4" />
               </Button>
             </TooltipTrigger>
@@ -114,7 +114,7 @@ export function ArtboardToolbar({
         {onTranslate && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => onTranslate(artboardId)}>
+              <Button variant="ghost" size="icon" aria-label="Translate artboard" className="w-7 h-7" onClick={() => onTranslate(artboardId)}>
                 <Languages className="w-4 h-4" />
               </Button>
             </TooltipTrigger>
@@ -127,6 +127,7 @@ export function ArtboardToolbar({
             <Button
               variant="ghost"
               size="icon"
+              aria-label="Delete artboard"
               className="w-7 h-7 text-destructive hover:text-destructive-foreground hover:bg-destructive/90"
               onClick={() => onDelete(artboardId)}
               disabled={!canDelete}
@@ -142,6 +143,7 @@ export function ArtboardToolbar({
             <Button
               variant="ghost"
               size="icon"
+              aria-label="Move artboard left"
               className="w-7 h-7"
               onClick={() => onMove(artboardId, 'left')}
               disabled={!canMoveLeft}
@@ -157,6 +159,7 @@ export function ArtboardToolbar({
             <Button
               variant="ghost"
               size="icon"
+              aria-label="Move artboard right"
               className="w-7 h-7"
               onClick={() => onMove(artboardId, 'right')}
               disabled={!canMoveRight}

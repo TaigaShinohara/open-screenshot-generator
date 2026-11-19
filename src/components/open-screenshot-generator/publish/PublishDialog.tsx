@@ -944,8 +944,8 @@ export function PublishDialog({
             Upload to the store
           </DialogTitle>
           <DialogDescription>
-            Send these artboards straight to your app listing with your own developer
-            credentials. Nothing passes through our servers, because there are none.
+            Send these artboards straight from this device to your app listing with your own
+            developer credentials.
           </DialogDescription>
         </DialogHeader>
 

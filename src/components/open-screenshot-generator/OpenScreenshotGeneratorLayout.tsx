@@ -10414,9 +10414,9 @@ const generateRandomProjectName = (): string => {
         <AlertDialog open={!!projectToDelete} onOpenChange={(open) => !open && setProjectToDelete(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogTitle>Delete this project?</AlertDialogTitle>
               <AlertDialogDescription>
-                This will permanently delete this project. This action cannot be undone.
+                This permanently removes the project from this device and cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -10425,7 +10425,7 @@ const generateRandomProjectName = (): string => {
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 onClick={() => projectToDelete && handleDeleteProject(projectToDelete)}
               >
-                Delete
+                Delete project
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -12391,10 +12391,10 @@ const generateRandomProjectName = (): string => {
                   sit with the canvas they act on. Undo and redo are two plain
                   buttons here rather than the dropdown they used to share:
                   the pill has the room, and one click beats two. */}
-              {/* Centred on a desktop canvas; pushed to the left edge on a
-                  phone so it and the zoom pill share the bottom row instead of
-                  sitting on top of each other. */}
-              <div className="absolute bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card/95 px-2 py-1 shadow-lg backdrop-blur max-md:left-3 max-md:translate-x-0">
+              {/* Centred on wide desktop canvases; pushed to the left edge below
+                  xl (1280px) so it and the zoom pill share the bottom row
+                  instead of overlapping on small laptops and tablets. */}
+              <div className="absolute bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card/95 px-2 py-1 shadow-lg backdrop-blur max-xl:left-3 max-xl:translate-x-0">
                 <Button
                   variant={activeTool === 'select' ? 'secondary' : 'ghost'}
                   size="icon"
@@ -12474,9 +12474,9 @@ const generateRandomProjectName = (): string => {
 
                 {/* Renders nothing unless there is an MCP server to talk about
                     (always on desktop, on the web only when a relay is
-                    configured). Hidden below md regardless: that corner has to
-                    hold the zoom pill and the properties button on a phone. */}
-                <div className="hidden md:block">
+                    configured). Hidden below xl so the zoom pill and tool bar
+                    keep room on small laptops, tablets and phones. */}
+                <div className="hidden xl:block">
                   {/* Desktop reads the API through the bridge above; on the web
                       this component owns the connection, so it needs it too. */}
                   <McpServerStatus getApi={() => mcpApiRef.current} />

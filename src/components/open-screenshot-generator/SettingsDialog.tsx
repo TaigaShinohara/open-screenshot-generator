@@ -306,7 +306,7 @@ export function SettingsDialog({ open, onOpenChange, onOpenTips }: SettingsDialo
             <SettingsSection title="Cloud">
               <SettingsRow
                 label="Save to your cloud automatically"
-                description="Saves the open project to your cloud a few seconds after you stop editing. Requires sign in"
+                description="Saves the open project to your cloud a few seconds after you stop editing. Off by default; projects stay on this device until you turn this on or press Save"
                 htmlFor="settings-cloud-auto-save"
                 control={
                   <Switch

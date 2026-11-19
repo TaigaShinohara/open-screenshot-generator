@@ -1,7 +1,7 @@
 {
   "id": "template_taiga_glass",
-  "name": "Taiga Glass (Japanese)",
-  "description": "Simple Glass based store screenshots for any app, with Japanese headlines on a deep navy glass layout. Edit the text, colors and device screenshots.",
+  "name": "Simple Glass",
+  "description": "Deep navy glass store screenshots for any app. Edit the text, colors and device screenshots.",
   "previewImage": "/data/projects/previews/taiga-glass.png",
   "timestamp": "2026-11-17T16:20:39.000Z",
   "projectData": [

@@ -25,36 +25,36 @@ body {
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 15%;
 
-    --primary: 182 25% 49.6%; /* Slate Blue 5F9EA0 */
+    --primary: 182 32% 36%; /* Deep Slate Blue for >=4.5:1 contrast with white text */
     --primary-foreground: 0 0% 100%; /* White text on slate blue */
 
     --secondary: 0 0% 92%; /* Lighter Gray for secondary elements */
     --secondary-foreground: 0 0% 15%;
 
     --muted: 0 0% 92%;
-    --muted-foreground: 0 0% 40%;
+    --muted-foreground: 0 0% 38%;
 
     --accent: 45 62% 52%; /* Warm Gold D4AF37 */
     --accent-foreground: 0 0% 15%; /* Dark text on gold */
 
-    --destructive: 0 84.2% 60.2%;
+    --destructive: 0 72% 45%;
     --destructive-foreground: 0 0% 98%;
 
     --border: 0 0% 80%;
     --input: 0 0% 95%; /* Lighter than background for input fields */
-    --ring: 182 25% 49.6%; /* Primary for ring */
+    --ring: 182 32% 36%; /* Primary for ring */
 
     --radius: 0.5rem;
 
     /* Sidebar specific colors - using a subtle version of primary */
     --sidebar-background: 182 20% 96%; /* Very light slate blue */
     --sidebar-foreground: 182 25% 20%; /* Darker slate blue for text */
-    --sidebar-primary: 182 25% 49.6%; /* Slate Blue (main primary) */
+    --sidebar-primary: 182 32% 36%; /* Slate Blue (main primary) */
     --sidebar-primary-foreground: 0 0% 100%; /* White */
     --sidebar-accent: 182 20% 90%; /* Lighter slate for hover */
     --sidebar-accent-foreground: 182 25% 15%; /* Darker slate for hover text */
     --sidebar-border: 182 20% 85%;
-    --sidebar-ring: 182 25% 49.6%; /* Primary for ring */
+    --sidebar-ring: 182 32% 36%; /* Primary for ring */
 
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
