@@ -80,6 +80,8 @@ export interface ActiveArtboardSummary {
   format: DeviceFormat | null;
   /** App Store header or search art, which has one size and no extra ones. */
   creative?: boolean;
+  /** The app icon, which has one size here; its own window makes the rest. */
+  icon?: boolean;
 }
 
 interface ExportDialogProps {
@@ -106,6 +108,10 @@ interface ExportDialogProps {
   // App Store header and search artboards, counted in artboardCount. They go
   // out once, at their own size, and never in the extra App Store sizes.
   creativeBoardCount?: number;
+  // App icon artboards, counted in artboardCount. A project-wide export leaves
+  // them out (the icon window exports every size); one exported on its own
+  // goes out once, at 1024 x 1024.
+  iconBoardCount?: number;
   // Set when the dialog is opened from an artboard's own toolbar, where
   // "export this board" is the whole intent.
   defaultCurrentArtboardOnly?: boolean;
@@ -116,7 +122,13 @@ interface ExportDialogProps {
   artboards?: ArtboardState[];
   // The language the canvas is showing, null while the base language is.
   activeLocale?: string | null;
+  // The devices the project makes beside its own size (switched on in the
+  // Every device view). They start ticked, and the ones that are not App
+  // Store sizes get a list of their own.
+  deviceSetFormats?: DeviceFormat[];
 }
+
+const NO_FORMATS: DeviceFormat[] = [];
 
 // Stable identity so the language memos below do not recompute on every render
 // of a project that has no languages.
@@ -152,9 +164,11 @@ export function ExportDialog({
   artboardCount = 0,
   appPreviewBoardCount = 0,
   creativeBoardCount = 0,
+  iconBoardCount = 0,
   defaultCurrentArtboardOnly = false,
   artboards = NO_ARTBOARDS,
   activeLocale = null,
+  deviceSetFormats = NO_FORMATS,
 }: ExportDialogProps) {
   const [asIs, setAsIs] = useState(true);
   const [generateFormats, setGenerateFormats] = useState<DeviceFormat[]>([]);
@@ -182,12 +196,16 @@ export function ExportDialog({
     missesRequiredIphoneSlot([currentSize]);
   const needsRequiredIphoneRef = useRef(needsRequiredIphone);
   needsRequiredIphoneRef.current = needsRequiredIphone;
+  const deviceSetFormatsRef = useRef(deviceSetFormats);
+  deviceSetFormatsRef.current = deviceSetFormats;
 
   useEffect(() => {
     // Reset selection whenever the dialog is reopened
     if (isOpen) {
       setAsIs(true);
-      setGenerateFormats(needsRequiredIphoneRef.current ? ['ios'] : []);
+      const ticked = new Set<DeviceFormat>(needsRequiredIphoneRef.current ? ['ios'] : []);
+      for (const id of deviceSetFormatsRef.current) ticked.add(id);
+      setGenerateFormats([...ticked]);
       setCurrentArtboardOnly(defaultCurrentArtboardOnly);
       setLocaleMode('active');
       setCustomLocales([]);
@@ -230,6 +248,12 @@ export function ExportDialog({
     .map((id) => DEVICE_FORMAT_PRESETS.find((p) => p.id === id)!)
     .filter(Boolean);
 
+  // Sizes the project makes that are not App Store screenshot sizes: Google
+  // Play's phone and tablets, and the Mac.
+  const otherDevicePresets = DEVICE_FORMAT_PRESETS.filter(
+    (preset) => deviceSetFormats.includes(preset.id) && !APP_STORE_FORMAT_IDS.includes(preset.id)
+  );
+
   const coveredByAsIs = (formatId: DeviceFormat) => {
     const currentPlatform = effectiveFormat === 'ios-large' ? 'ios' : effectiveFormat;
     const formatPlatform = formatId === 'ios-large' ? 'ios' : formatId;
@@ -250,22 +274,25 @@ export function ExportDialog({
   };
 
   const noLocaleSelected = showLocales && selectedLocales.length === 0;
-  // Header and search art on its own has nothing to resize to.
-  const formatsAvailable = !(scopedToArtboard && activeArtboard?.creative);
+  // Header and search art or the icon on its own has nothing to resize to.
+  const formatsAvailable = !(scopedToArtboard && (activeArtboard?.creative || activeArtboard?.icon));
+  // What the run makes: the ticked sizes the current size does not already cover.
+  const chosenFormats = formatsAvailable ? generateFormats.filter((id) => !coveredByAsIs(id)) : [];
   const nothingSelected =
-    (!asIs && (generateFormats.length === 0 || !formatsAvailable)) || noLocaleSelected;
+    (!asIs && (chosenFormats.length === 0 || !formatsAvailable)) || noLocaleSelected;
 
   // Every pass (the as-is capture plus each generated format) produces one file
   // per board in scope, and every language repeats the lot. Languages are the
   // multiplier people underestimate, so the count is spelled out below.
-  const boardsInScope = scopedToArtboard ? 1 : Math.max(1, artboardCount);
-  // Header and search art takes the as-is pass only.
+  const boardsInScope = scopedToArtboard ? 1 : Math.max(1, artboardCount - iconBoardCount);
+  // Header and search art and the app icon take the as-is pass only.
   const creativeInScope = scopedToArtboard ? (activeArtboard?.creative ? 1 : 0) : creativeBoardCount;
-  const sizedBoardsInScope = Math.max(0, boardsInScope - creativeInScope);
-  const passCount = (asIs ? 1 : 0) + generateFormats.length;
+  const iconInScope = scopedToArtboard && activeArtboard?.icon ? 1 : 0;
+  const sizedBoardsInScope = Math.max(0, boardsInScope - creativeInScope - iconInScope);
+  const passCount = (asIs ? 1 : 0) + chosenFormats.length;
   const localeCount = showLocales ? selectedLocales.length : 1;
   const fileCount =
-    ((asIs ? boardsInScope : 0) + generateFormats.length * sizedBoardsInScope) * localeCount;
+    ((asIs ? boardsInScope : 0) + chosenFormats.length * sizedBoardsInScope) * localeCount;
   const fileCountBreakdown = [
     `${boardsInScope} ${boardsInScope === 1 ? 'artboard' : 'artboards'}`,
     `${passCount} ${passCount === 1 ? 'size' : 'sizes'}`,
@@ -374,6 +401,13 @@ export function ExportDialog({
                     : `Includes ${creativeInScope} App Store header and search ${creativeInScope === 1 ? 'artboard' : 'artboards'}, each at its own App Store Connect size`}
                 </p>
               )}
+              {(iconInScope > 0 || (!scopedToArtboard && iconBoardCount > 0)) && (
+                <p className="text-xs text-muted-foreground">
+                  {iconInScope > 0
+                    ? 'Your app icon, as one 1024 x 1024 picture. For every size, use App icon in the + menu'
+                    : 'Your app icon isn\'t in this export. To save every size of the app icon, use App icon in the + menu'}
+                </p>
+              )}
             </div>
           </div>
 
@@ -436,6 +470,33 @@ export function ExportDialog({
               })}
             </div>
           </div>
+
+          {otherDevicePresets.length > 0 && (
+            <div>
+              <p className="text-sm font-medium mb-0.5">Other devices</p>
+              <p className="text-xs text-muted-foreground mb-3">
+                Your screenshots remade for these devices, as you saw them in Every device.
+              </p>
+              <div className="grid gap-3">
+                {otherDevicePresets.map((preset) => {
+                  const disabled = coveredByAsIs(preset.id) || !formatsAvailable;
+                  return (
+                    <div key={preset.id} className="flex items-start space-x-2">
+                      <Checkbox
+                        id={`gen-${preset.id}`}
+                        disabled={disabled}
+                        checked={!disabled && generateFormats.includes(preset.id)}
+                        onCheckedChange={() => toggleFormat(preset.id)}
+                      />
+                      <Label htmlFor={`gen-${preset.id}`} className={disabled ? 'text-muted-foreground' : undefined}>
+                        {preset.label}: {preset.artboard.width}×{preset.artboard.height}
+                      </Label>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Only a project with languages sees this. Everything above is
               rendered once per language selected here, so it sits last, next
@@ -560,7 +621,7 @@ export function ExportDialog({
               onClick={() =>
               onConfirmExport({
                 asIs,
-                generateFormats,
+                generateFormats: chosenFormats,
                 currentArtboardOnly: scopedToArtboard,
                 // Left off entirely on a project with no languages, so the
                 // export path keeps its existing single-pass behaviour.

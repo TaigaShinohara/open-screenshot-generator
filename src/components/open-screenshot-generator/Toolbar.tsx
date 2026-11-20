@@ -12,6 +12,7 @@ import {
   ImagesIcon,
   ClapperboardIcon,
   SmartphoneIcon,
+  TabletSmartphoneIcon,
   ChevronDownIcon,
   RulerIcon,
   CloudUploadIcon,
@@ -28,7 +29,8 @@ import {
   StoreIcon,
   UsersIcon,
   LanguagesIcon,
-  PanelTopIcon
+  PanelTopIcon,
+  SquircleIcon
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -61,6 +63,8 @@ interface ToolbarProps {
   onMakeGraphics?: () => void;
   /** Open the App Store header and search dialog for the open project. */
   onMakeStoreArt?: () => void;
+  /** Opens the app icon window: its starters, or the icon the project has. */
+  onMakeAppIcon?: () => void;
   onPreview: () => void;
   /** Preview, opened straight into the store listing mockup. */
   onPreviewStore?: () => void;
@@ -121,6 +125,8 @@ interface ToolbarProps {
   initialArtboardSize?: Size; // New prop to get current size
   className?: string;
   onSelectDeviceFormat?: (preset: DeviceFormatPreset) => void;
+  /** Opens the Every device view: the design laid out for each store size. */
+  onOpenEveryDevice?: () => void;
   onTranslate?: () => void;
   isTranslationEnabled?: boolean;
   // Format the project's mockups are currently on (phone platform or Play
@@ -148,6 +154,7 @@ export function Toolbar({
   onDropInScreenshots,
   onMakeGraphics,
   onMakeStoreArt,
+  onMakeAppIcon,
   onPreview,
   onPreviewStore,
   onPreviewCompare,
@@ -176,6 +183,7 @@ export function Toolbar({
   initialArtboardSize,
   className,
   onSelectDeviceFormat,
+  onOpenEveryDevice,
   onTranslate,
   isTranslationEnabled = true,
   activeDeviceFormat,
@@ -263,18 +271,33 @@ export function Toolbar({
                 : []),
             ],
           },
-          ...(onMakeStoreArt
+          ...(onMakeStoreArt || onMakeAppIcon
             ? [
                 {
                   label: 'Add to this project',
                   items: [
-                    {
-                      id: 'store-art',
-                      label: 'App Store header and search art',
-                      description: 'New in iOS 27, built from this project',
-                      icon: PanelTopIcon,
-                      onSelect: onMakeStoreArt,
-                    },
+                    ...(onMakeAppIcon
+                      ? [
+                          {
+                            id: 'app-icon',
+                            label: 'App icon',
+                            description: 'One design, every size for iPhone, Android and Mac',
+                            icon: SquircleIcon,
+                            onSelect: onMakeAppIcon,
+                          },
+                        ]
+                      : []),
+                    ...(onMakeStoreArt
+                      ? [
+                          {
+                            id: 'store-art',
+                            label: 'App Store header and search art',
+                            description: 'New in iOS 27, built from this project',
+                            icon: PanelTopIcon,
+                            onSelect: onMakeStoreArt,
+                          },
+                        ]
+                      : []),
                   ],
                 },
               ]
@@ -370,6 +393,16 @@ export function Toolbar({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {onOpenEveryDevice && (
+              <>
+                <DropdownMenuItem onClick={onOpenEveryDevice}>
+                  <TabletSmartphoneIcon className="mr-2 h-4 w-4 opacity-80" />
+                  Every device
+                  <span className="ml-auto pl-4 text-xs text-muted-foreground">iPad, Android, Mac</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
             <DropdownMenuLabel className="text-xs">Convert project to</DropdownMenuLabel>
             <DropdownMenuSeparator />
             {DEVICE_FORMAT_PRESETS.map((preset, i) => (
@@ -385,6 +418,13 @@ export function Toolbar({
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel className="text-xs">Play Store tablets</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                {preset.id === 'mac' && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-xs">Mac App Store</DropdownMenuLabel>
                     <DropdownMenuSeparator />
                   </>
                 )}
@@ -432,6 +472,12 @@ export function Toolbar({
             <DropdownMenuItem onClick={onPreviewCompare}>
               <LanguagesIcon className="mr-2 h-4 w-4 opacity-80" />
               Compare languages
+            </DropdownMenuItem>
+          )}
+          {onOpenEveryDevice && (
+            <DropdownMenuItem onClick={onOpenEveryDevice}>
+              <TabletSmartphoneIcon className="mr-2 h-4 w-4 opacity-80" />
+              Every device
             </DropdownMenuItem>
           )}
         </DropdownMenuContent>

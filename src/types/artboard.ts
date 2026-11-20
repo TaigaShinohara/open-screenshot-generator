@@ -1,3 +1,5 @@
+import type { DeviceFormat } from '@/lib/deviceRegistry';
+
 export interface Point {
   x: number;
   y: number;
@@ -54,6 +56,12 @@ export interface LinearGradient {
   color1: string;
   color2: string;
   angle: number; // degrees
+}
+
+// A text fill can run through more colours than two: `via` lists the ones
+// between color1 and color2, in order, spaced evenly.
+export interface TextFillGradient extends LinearGradient {
+  via?: string[];
 }
 
 // Ensure our element types are properly defined for copy/paste operations
@@ -116,6 +124,15 @@ export interface BaseElement {
    * Ignored unless spanArtboards is on.
    */
   spanBehind?: boolean;
+  /**
+   * On the app icon artboard only (ArtboardState.appIcon): 'back' puts the
+   * element in the icon's background layer with the board's own colour,
+   * gradient and picture. Unset is the front layer, which is what an Android
+   * icon moves on its own, what iOS shows alone on its dark home screen, and
+   * what a themed or tinted icon is drawn from. See src/lib/appIcon/specs.ts.
+   * Ignored on every other artboard.
+   */
+  iconLayer?: 'back';
 }
 
 export interface TextElementProps extends BaseElement {
@@ -126,6 +143,12 @@ export interface TextElementProps extends BaseElement {
   // this number.
   fontSize: number;
   color: string;
+  // Linear gradient painted across the letters. Wins over `color`, which stays
+  // the solid colour the text shows while it is being edited and the one it
+  // goes back to when the gradient is removed. No outline is drawn while a
+  // gradient is set: the outline is a ring of text shadows, and those paint
+  // over the letters' clipped background.
+  fillGradient?: TextFillGradient;
   fontFamily: string;
   fontWeight?: string; // 'normal', 'bold', etc.
   fontStyle?: string; // 'normal', 'italic'
@@ -556,6 +579,25 @@ export interface ProjectLocalization {
  */
 export type CreativeAssetKind = 'header' | 'search' | 'universal';
 
+/**
+ * What the app icon artboard keeps of its own (src/lib/appIcon/). The board is
+ * the icon as iOS shows it, 1024 x 1024; every other size and store is made
+ * from it when it is exported.
+ */
+export interface AppIconSettings {
+  /**
+   * How the front layer shows in iOS's dark icons, where the system draws its
+   * own dark background behind it. 'light' turns it white, for a design whose
+   * front is too dark to see there. Unset is as designed.
+   */
+  dark?: 'light';
+  /**
+   * The app's name under the icon in the previews, and in the export's
+   * folder and README, as the user typed it. Unset follows the project name.
+   */
+  appName?: string;
+}
+
 /** See DeviceFrameElementProps.captureScreen. */
 export interface CaptureScreen {
   /** A link the app opens, such as `myapp://settings`. Absent: the screen the app opens on. */
@@ -577,6 +619,14 @@ export interface ArtboardState {
    * placement's name instead of a screenshot number. Unset is a screenshot.
    */
   creativeAsset?: CreativeAssetKind;
+  /**
+   * Set when this artboard is the app's icon rather than a screenshot. Like
+   * header art it keeps its own size (1024 x 1024), never joins a shared
+   * background picture or an element crossing artboard edges, takes no part
+   * in the device sets, and exports under its own name. Its elements are the
+   * front layer unless marked `iconLayer: 'back'`. See src/lib/appIcon/.
+   */
+  appIcon?: AppIconSettings;
   backgroundColor: string;
   backgroundType?: 'solid' | 'gradient';
   backgroundGradient?: {
@@ -662,6 +712,42 @@ export interface ArtboardState {
   localized?: Record<string, Record<string, ElementLocaleOverride>>;
   /** Project-level config, mirrored onto every board. See ProjectLocalization. */
   localization?: ProjectLocalization;
+  /**
+   * What was chosen for this board on other devices (the Every device view,
+   * src/lib/deviceSets/), keyed by device format. Absent means the board is
+   * laid out for each device on its own.
+   */
+  deviceSets?: Partial<Record<DeviceFormat, BoardDeviceSet>>;
+  /**
+   * The devices the project makes beside its own size, which the Export
+   * dialog ticks. Project-level, so mirrored onto every board like
+   * `localization`; read it with projectSetFormats.
+   */
+  deviceSetFormats?: DeviceFormat[];
+}
+
+/** The ways a board can be laid out again for another device. See src/lib/deviceSets/layout.ts. */
+export type DeviceSetLayout = 'stacked' | 'beside' | 'beside-flipped' | 'scaled';
+
+/** A screenshot a frame shows on one device only, such as an iPad screenshot for the iPad set. */
+export interface DeviceSetShot {
+  screenshotSrc: string;
+  naturalScreenshotWidth?: number;
+  naturalScreenshotHeight?: number;
+}
+
+/** A frame's screenshot on one device: the main language's, and other languages' own. */
+export interface DeviceSetScreen extends DeviceSetShot {
+  /** Keyed by store locale code. A language without one shows the main language's. */
+  localized?: Record<string, DeviceSetShot>;
+}
+
+/** What was chosen for one board on one device. */
+export interface BoardDeviceSet {
+  /** Unset is the layout picked for the board automatically. */
+  layout?: DeviceSetLayout;
+  /** Screenshots for this device only, by device element id. */
+  screens?: Record<string, DeviceSetScreen>;
 }
 
 
