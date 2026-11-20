@@ -44,7 +44,7 @@ import { AppStoreCredentialsForm, PlayCredentialsForm } from '../publish/StoreCr
 import { AppleAdsPanel } from './GrowthAppleAds';
 import { Gated, Panel, SectionTitle, useGrowthView } from './GrowthShared';
 
-const DESKTOP_URL = 'https://github.com/TaigaShinohara/open-screenshot-generator/releases';
+const DESKTOP_URL = 'https://github.com/TaigaShinohara/tiger-screen-shot/releases';
 const VENDOR_URL = 'https://appstoreconnect.apple.com/itc/payments_and_financial_reports';
 const PLAY_CONSOLE_URL = 'https://play.google.com/console';
 

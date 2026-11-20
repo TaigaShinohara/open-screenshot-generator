@@ -19,8 +19,8 @@ import { Editor } from '../helpers/editor';
  * never heard of.
  */
 
-const REPO_URL = 'https://github.com/TaigaShinohara/open-screenshot-generator';
-const DESKTOP_DOWNLOAD_URL = 'https://github.com/TaigaShinohara/open-screenshot-generator/releases';
+const REPO_URL = 'https://github.com/TaigaShinohara/tiger-screen-shot';
+const DESKTOP_DOWNLOAD_URL = 'https://github.com/TaigaShinohara/tiger-screen-shot/releases';
 const APP_STORE_KEY_URL = 'https://appstoreconnect.apple.com/access/integrations/api';
 
 /** The toolbar's source link. It is an anchor, not a button, on both platforms. */

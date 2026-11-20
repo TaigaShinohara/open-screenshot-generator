@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { isTauri, openExternal } from '@/lib/desktop';
 
-export const REPO_URL = 'https://github.com/TaigaShinohara/open-screenshot-generator';
+export const REPO_URL = 'https://github.com/TaigaShinohara/tiger-screen-shot';
 
 export function GithubMark({ className }: { className?: string }) {
   return (

@@ -7,8 +7,8 @@ Bug reports, fixes, and new templates are welcome. For a larger feature, open an
 You need Node 18.18 or newer.
 
 ```bash
-git clone https://github.com/dotnetdreamer/open-screenshot-generator.git
-cd open-screenshot-generator
+git clone https://github.com/TaigaShinohara/tiger-screen-shot.git
+cd tiger-screen-shot
 npm install
 npm run dev
 ```

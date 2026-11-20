@@ -131,7 +131,7 @@ import { GrowthRivalReviews } from './GrowthRivalReviews';
 import { Gated, GrowthProvider, StoreImage, type GrowthTab, type GrowthTabOptions, type GrowthView, type OpenProject } from './GrowthShared';
 import { GrowthTimeline } from './GrowthTimeline';
 
-const DESKTOP_URL = 'https://github.com/TaigaShinohara/open-screenshot-generator/releases';
+const DESKTOP_URL = 'https://github.com/TaigaShinohara/tiger-screen-shot/releases';
 
 /** Stands in for the app while there is none, so every screen can draw itself empty. */
 const NO_APP: GrowthApp = { id: '', name: 'Your app', bundleId: '' };

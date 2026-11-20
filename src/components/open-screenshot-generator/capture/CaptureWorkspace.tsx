@@ -70,7 +70,7 @@ import { CaptureGrid, frameTitle } from './CaptureGrid';
 import { InfoTip } from './InfoTip';
 import { LiveView } from './LiveView';
 
-const DESKTOP_URL = 'https://github.com/TaigaShinohara/open-screenshot-generator/releases';
+const DESKTOP_URL = 'https://github.com/TaigaShinohara/tiger-screen-shot/releases';
 const DESKTOP_ONLY = 'Needs the desktop app';
 /** Android's screenrecord stops by itself after 3 minutes (Capture sets no --time-limit). */
 const ANDROID_RECORD_LIMIT = 180_000;
