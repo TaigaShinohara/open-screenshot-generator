@@ -57,7 +57,7 @@ export function ExportSummaryCard({
       role="status"
       aria-live="polite"
       data-testid="export-summary-card"
-      className="fixed bottom-16 right-4 z-50 w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-emerald-500/40 bg-card/95 p-4 shadow-xl backdrop-blur"
+      className="fixed bottom-20 right-4 z-50 w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-emerald-500/40 bg-card/95 p-4 shadow-xl backdrop-blur"
     >
       <div className="flex items-start gap-2.5">
         <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">

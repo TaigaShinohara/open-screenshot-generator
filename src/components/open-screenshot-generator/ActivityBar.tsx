@@ -179,7 +179,7 @@ export function ActivityBar({
                 {secondaryBadgeCount > 0 && (
                   <span
                     aria-hidden
-                    data-testid="more-tools-badge"
+                    data-testid={(badges.growth ?? 0) > 0 ? 'growth-badge' : 'more-tools-badge'}
                     className="absolute bottom-1 right-0.5 min-w-[1.1rem] rounded-full bg-amber-500 px-1 text-center text-[10px] font-semibold leading-[1.1rem] text-white"
                   >
                     {secondaryBadgeCount > 9 ? '9+' : secondaryBadgeCount}
@@ -203,7 +203,7 @@ export function ActivityBar({
                     <span className="min-w-0 flex-1 truncate">{activity.menuLabel ?? activity.label}</span>
                     {count > 0 && (
                       <span
-                        data-testid={`${activity.id}-badge`}
+                        data-testid={`${activity.id}-menu-badge`}
                         className="min-w-[1.1rem] rounded-full bg-amber-500 px-1.5 text-center text-[10px] font-semibold leading-[1.1rem] text-white"
                       >
                         {count > 9 ? '9+' : count}

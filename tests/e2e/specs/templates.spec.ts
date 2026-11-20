@@ -17,6 +17,7 @@ const TEMPLATE = 'Somnia Sleep';
 
 test.describe('templates', () => {
   test('the start dialog offers every category with a populated count', async ({ app }) => {
+    await app.openTemplatesInStartDialog();
     const dialog = app.startDialog;
     await expect(dialog).toBeVisible();
 
@@ -28,6 +29,7 @@ test.describe('templates', () => {
   });
 
   test('picking a template loads its whole project onto the canvas', async ({ app, page }) => {
+    await app.openTemplatesInStartDialog();
     const dialog = app.startDialog;
     await dialog.getByRole('tab', { name: /App Screenshots/ }).click();
 
@@ -56,6 +58,7 @@ test.describe('templates', () => {
   });
 
   test('a picked template is persisted, so a reload does not lose it', async ({ app, page }) => {
+    await app.openTemplatesInStartDialog();
     await app.startDialog.getByRole('tab', { name: /App Screenshots/ }).click();
     await app.startDialog.getByAltText(TEMPLATE, { exact: true }).click();
     await expect(app.artboards).toHaveCount(5, { timeout: 30_000 });

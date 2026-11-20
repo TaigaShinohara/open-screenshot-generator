@@ -833,7 +833,7 @@ test.describe('growth sync', () => {
     expect(requestsNow.slice(requestsSoFar).some((request) => request.url.includes('/customerReviews'))).toBe(true);
 
     // The bar's button opens on the insights, and what Growth shows counts as seen.
-    await viewButton(page, GROWTH_BUTTON).click();
+    await openGrowth(page);
     await expect(view).toBeVisible();
     await expect(section(view, 'Insights')).toHaveAttribute('aria-current', 'page');
     await expect(badge).toBeHidden();

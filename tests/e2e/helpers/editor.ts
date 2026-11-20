@@ -142,9 +142,12 @@ export class Editor {
    * when the Elements tab is not visible yet.
    */
   async ensurePaletteOpen(): Promise<void> {
-    if (await this.paletteTab('Elements').isVisible().catch(() => false)) return;
-    const trigger = this.page.getByTitle('Open elements palette');
-    if (await trigger.count()) await trigger.first().click();
+    const collapsed = this.page.locator('[data-side="left"][data-state="collapsed"]');
+    if ((await collapsed.count()) > 0 || !(await this.paletteTab('Elements').isVisible().catch(() => false))) {
+      const trigger = this.page.getByTitle('Open elements palette');
+      if (await trigger.count()) await trigger.first().click();
+    }
+    await expect(collapsed).toHaveCount(0, { timeout: 15_000 });
     await expect(this.paletteTab('Elements')).toBeVisible({ timeout: 15_000 });
   }
 

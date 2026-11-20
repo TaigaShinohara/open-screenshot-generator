@@ -196,6 +196,7 @@ test.describe('App Preview video export', () => {
     await put(page, 'projects', seedProject());
 
     await editor.goto('/');
+    await editor.openTemplatesInStartDialog();
     await editor.startDialog.getByText('Video Frames', { exact: true }).click();
     await expect(editor.startDialog).toBeHidden();
     for (const swatch of SWATCHES) {

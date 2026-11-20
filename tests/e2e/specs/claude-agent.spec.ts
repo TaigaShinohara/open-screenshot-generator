@@ -74,6 +74,16 @@ async function openAgentScreen(page: Page, startDialog: ReturnType<Page['getByRo
   return dialog;
 }
 
+/** Open the Agent dock tab directly (enabled by default on desktop), falling back to the panel menu if hidden. */
+async function openAgentTab(app: import('../helpers/editor').Editor, page: Page) {
+  const tab = app.dockTab('Agent');
+  if (await tab.isVisible().catch(() => false)) {
+    await tab.click();
+    return;
+  }
+  await app.chooseFromMenu(page.getByTitle('Panel and display options'), 'Chat with Claude Code');
+}
+
 async function waitForListener(tauri: TauriHarness, event: string) {
   await expect
     .poll(
@@ -562,7 +572,7 @@ test.describe('a Claude Code run', () => {
     test.skip(!isDesktop, 'Claude Code runs in the desktop app');
 
     await app.startBlankProject();
-    await app.chooseFromMenu(page.getByTitle('Panel and display options'), 'Chat with Claude Code');
+    await openAgentTab(app, page);
     const panel = app.activeDockPanel;
     const ring = panel.getByRole('meter', { name: 'Context window' });
     const input = panel.getByLabel('Message the agent');
@@ -634,7 +644,7 @@ test.describe('a Claude Code run', () => {
       test.skip(!isDesktop, 'Claude Code runs in the desktop app');
 
       await app.startBlankProject();
-      await app.chooseFromMenu(page.getByTitle('Panel and display options'), 'Chat with Claude Code');
+      await openAgentTab(app, page);
       const panel = app.activeDockPanel;
       const ring = panel.getByRole('meter', { name: 'Context window' });
       await expect(panel.getByText('Talk to the agent')).toBeVisible();
@@ -671,9 +681,9 @@ test.describe('a Claude Code run', () => {
 
     await app.startBlankProject();
     const agentTab = page.getByRole('tab', { name: 'Agent', exact: true });
-    await expect(agentTab).toHaveCount(0);
+    await expect(agentTab).toHaveCount(1);
 
-    await app.chooseFromMenu(page.getByTitle('Panel and display options'), 'Chat with Claude Code');
+    await openAgentTab(app, page);
     await expect(agentTab).toHaveAttribute('aria-selected', 'true');
     const panel = app.activeDockPanel;
     await expect(panel.getByText('Talk to the agent')).toBeVisible();
@@ -685,6 +695,10 @@ test.describe('a Claude Code run', () => {
     await app.chooseFromMenu(panel.getByRole('button', { name: 'Agent options' }), 'Hide this tab');
     await expect(agentTab).toHaveCount(0);
     await expect(app.dockTab('Properties')).toHaveAttribute('aria-selected', 'true');
+
+    // Once hidden, the panel menu brings it back.
+    await app.chooseFromMenu(page.getByTitle('Panel and display options'), 'Chat with Claude Code');
+    await expect(agentTab).toHaveAttribute('aria-selected', 'true');
     expect(await tauri.unhandled()).toEqual([]);
   });
 
@@ -697,7 +711,7 @@ test.describe('a Claude Code run', () => {
     test.skip(!isDesktop, 'Claude Code runs in the desktop app');
 
     await app.startBlankProject();
-    await app.chooseFromMenu(page.getByTitle('Panel and display options'), 'Chat with Claude Code');
+    await openAgentTab(app, page);
     const panel = app.activeDockPanel;
     await expect(panel.getByText('Talk to the agent')).toBeVisible();
     const options = panel.getByRole('button', { name: 'Agent options' });
@@ -751,7 +765,7 @@ test.describe('a Claude Code run', () => {
     test.skip(!isDesktop, 'Claude Code runs in the desktop app');
 
     await app.startBlankProject();
-    await app.chooseFromMenu(page.getByTitle('Panel and display options'), 'Chat with Claude Code');
+    await openAgentTab(app, page);
     await expect(app.activeDockPanel.getByText('Talk to the agent')).toBeVisible();
     await app.chooseFromMenu(page.getByTitle('Panel and display options'), /^agent$/i);
     const created = await tauri.waitForCall('plugin:webview|create_webview_window', 30_000);
@@ -789,7 +803,7 @@ test.describe('a Claude Code run', () => {
     await app.startBlankProject();
     await app.ensurePaletteOpen();
     await app.addElementFrom('Basic', 'Rectangle', 'basic:rectangle');
-    await app.chooseFromMenu(page.getByTitle('Panel and display options'), 'Chat with Claude Code');
+    await openAgentTab(app, page);
     const panel = app.activeDockPanel;
     await expect(panel.getByText('Talk to the agent')).toBeVisible();
 
@@ -829,7 +843,7 @@ test.describe('a Claude Code run', () => {
     await page.mouse.click(centre.x, centre.y);
     await expect(app.selectedElement).toHaveCount(1);
 
-    await app.chooseFromMenu(page.getByTitle('Panel and display options'), 'Chat with Claude Code');
+    await openAgentTab(app, page);
     const panel = app.activeDockPanel;
     await expect(panel.getByText('Talk to the agent')).toBeVisible();
 
@@ -856,7 +870,7 @@ test.describe('a Claude Code run', () => {
     test.skip(!isDesktop, 'Claude Code runs in the desktop app');
 
     await app.startBlankProject();
-    await app.chooseFromMenu(page.getByTitle('Panel and display options'), 'Chat with Claude Code');
+    await openAgentTab(app, page);
     await expect(page.getByRole('tab', { name: 'Agent', exact: true })).toHaveAttribute('aria-selected', 'true');
     // The chat takes the whole column while another tab is there to switch to.
     await expect(app.layersHeader).toHaveCount(0);
@@ -907,7 +921,7 @@ test.describe('code folders', () => {
     test.skip(!isDesktop, 'code folders need the desktop app');
 
     await app.startBlankProject();
-    await app.chooseFromMenu(page.getByTitle('Panel and display options'), 'Chat with Claude Code');
+    await openAgentTab(app, page);
     const panel = app.activeDockPanel;
     await expect(panel.getByText('Talk to the agent')).toBeVisible();
     const chips = folderChips(panel);
@@ -1028,7 +1042,7 @@ test.describe('code folders', () => {
     test.skip(!isDesktop, 'code folders need the desktop app');
 
     await app.startBlankProject();
-    await app.chooseFromMenu(page.getByTitle('Panel and display options'), 'Chat with Claude Code');
+    await openAgentTab(app, page);
     const panel = app.activeDockPanel;
     await expect(panel.getByText('Talk to the agent')).toBeVisible();
     const add = panel.getByRole('button', { name: ADD_FOLDER });
@@ -1087,7 +1101,7 @@ test.describe('code folders', () => {
     test.skip(!isDesktop, 'code folders need the desktop app');
 
     await app.startBlankProject();
-    await app.chooseFromMenu(page.getByTitle('Panel and display options'), 'Chat with Claude Code');
+    await openAgentTab(app, page);
     await expect(app.activeDockPanel.getByText('Talk to the agent')).toBeVisible();
     await app.chooseFromMenu(page.getByTitle('Panel and display options'), /^agent$/i);
     const created = await tauri.waitForCall('plugin:webview|create_webview_window', 30_000);
@@ -1306,7 +1320,7 @@ test.describe('code folders', () => {
     test.skip(!isDesktop, 'code folders need the desktop app');
 
     await app.startBlankProject();
-    await app.chooseFromMenu(page.getByTitle('Panel and display options'), 'Chat with Claude Code');
+    await openAgentTab(app, page);
     const agentTab = page.getByRole('tab', { name: 'Agent', exact: true });
     await expect(app.activeDockPanel.getByText('Talk to the agent')).toBeVisible();
     await app.activeDockPanel.getByRole('button', { name: ADD_FOLDER }).click();

@@ -319,7 +319,7 @@ test.describe('canvas layout', () => {
 
     await app.canvasSizeButton.click();
     await expect(large).toBeChecked();
-    await app.canvasSizeDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await page.keyboard.press('Escape');
     await expect(app.canvasSizeDialog).toBeHidden();
     await app.undoButton.click();
     await expectBoardSize(app.board(0), 1206, 2622);

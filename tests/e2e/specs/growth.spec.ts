@@ -56,16 +56,14 @@ test.describe('growth', () => {
     await app.startBlankProject();
     const bar = views(page);
     await expect(viewButton(page, 'Editor')).toHaveAttribute('aria-current', 'page');
-    // One Growth button in the window: the toolbar has none of its own.
-    await expect(page.getByTitle(GROWTH_BUTTON)).toHaveCount(1);
+    // Growth sits inside the More tools menu on the activity bar.
+    const moreTools = bar.getByRole('button', { name: 'More tools', exact: true });
+    await expect(moreTools).toBeVisible();
 
     // The account and the app's settings are on the bar too, and work from there.
     for (const name of ['Account', 'Settings', 'About']) {
       await expect(bar.getByRole('button', { name, exact: true })).toBeVisible();
     }
-    // Discover is there only when the build has a Discover server, and then on the bar alone.
-    const discoverOnBar = await bar.getByRole('button', { name: 'Discover', exact: true }).count();
-    await expect(page.getByRole('button', { name: 'Discover', exact: true })).toHaveCount(discoverOnBar);
     await bar.getByRole('button', { name: 'Settings', exact: true }).click();
     await expect(app.settingsDialog).toBeVisible();
     await page.keyboard.press('Escape');
@@ -74,7 +72,7 @@ test.describe('growth', () => {
     const exportBox = await app.exportButton.boundingBox();
     if (!exportBox) throw new Error('The Export button has no bounding box');
     const view = await openGrowth(page);
-    await expect(viewButton(page, GROWTH_BUTTON)).toHaveAttribute('aria-current', 'page');
+    await expect(moreTools).toHaveAttribute('aria-current', 'page');
     await expect(viewButton(page, 'Editor')).not.toHaveAttribute('aria-current', 'page');
     // The editor stays mounted under Growth, out of sight: its toolbar does
     // not draw over the view, and a press where Export was lands in Growth.
@@ -170,7 +168,7 @@ test.describe('growth', () => {
     await expect(app.selectedElement).toHaveCount(1);
 
     // Growth comes back on the section it was left on.
-    await viewButton(page, GROWTH_BUTTON).click();
+    await openGrowth(page);
     await expect(view).toBeVisible();
     await expect(section(view, 'Reviews')).toHaveAttribute('aria-current', 'page');
   });

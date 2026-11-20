@@ -423,7 +423,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Trash2Icon } from 'lucide-react';
 import { readElementClipboard, useElementClipboard, writeElementClipboard } from '@/lib/elementClipboard';
-import { readPreference, writePreference } from '@/lib/editorPreferences';
+import { readPreference, useEditorPreference, writePreference } from '@/lib/editorPreferences';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -1615,6 +1615,14 @@ export function OpenScreenshotGeneratorLayout() {
   }, []);
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
   const [exportSummary, setExportSummary] = useState<ExportSummaryData | null>(null);
+  const [detailedEditor] = useEditorPreference('detailedEditor');
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+  useEffect(() => {
+    setIsPaletteOpen(detailedEditor);
+  }, [detailedEditor]);
+  useEffect(() => {
+    setExportSummary(null);
+  }, [activeProjectId]);
   // Direct-to-store upload (App Store Connect / Google Play). Desktop only,
   // see src/lib/publish; the dialog explains itself on the web build.
   const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
@@ -5986,6 +5994,7 @@ export function OpenScreenshotGeneratorLayout() {
     { skipAppPreviewBoards = false }: { skipAppPreviewBoards?: boolean } = {}
   ) => {
     setIsExportDialogOpen(false);
+    setExportSummary(null);
     // Both exports rasterize the live canvas, so a timeline left running would
     // bake a mid-animation frame into the output.
     stopPlayback();
@@ -6203,7 +6212,7 @@ export function OpenScreenshotGeneratorLayout() {
         }
         setExportSummary({
           fileCount: saved.length,
-          languages: locales ?? [],
+          languages: locales && locales.length > 0 ? locales : [activeLocale ?? getBaseLocale(original)],
           formatLabels,
           destination: exportDir ?? saved[0]?.path ?? null,
           isDesktop: isTauri(),
@@ -12064,7 +12073,7 @@ const generateRandomProjectName = (): string => {
           flex item; as a block it grew to its content, and the canvas lost
           its scroll area to the page. */}
       <div ref={editorViewRef} className={cn('flex min-w-0 flex-1 flex-col md:pl-12', activity !== 'editor' && 'invisible')}>
-      <SidebarProvider defaultOpen>
+      <SidebarProvider open={isPaletteOpen} onOpenChange={setIsPaletteOpen}>
         <Sidebar side="left" collapsible="icon" variant="sidebar" className="border-r md:left-12">
           <SidebarHeader className="border-b">
             <div className="flex items-center gap-3 px-2 py-2.5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">

@@ -58,6 +58,7 @@ async function openCompetitors(page: Page) {
 
 /** Open a template from the App Screenshots tab of the start dialog. */
 async function openTemplate(app: import('../helpers/editor').Editor, name: string) {
+  await app.openTemplatesInStartDialog();
   await app.startDialog.getByRole('tab', { name: /App Screenshots/ }).click();
   await app.startDialog.getByAltText(name, { exact: true }).click();
   await expect(app.startDialog).toBeHidden({ timeout: 30_000 });
@@ -357,7 +358,7 @@ test.describe('growth competitors', () => {
     await expect(page.getByTestId('growth-badge')).toHaveText('1');
     // Growth's button leads to the change as well as the toast does (the App Store test takes the toast's Compare).
     // The card was drawn while the editor was in front, and opens on its screenshots once it counts as new.
-    await viewButton(page, GROWTH_BUTTON).click();
+    await openGrowth(page);
     await expect(page.getByTestId('growth-badge')).toHaveCount(0);
     const card = competitors(page).locator('[data-rival-change]').filter({ hasText: 'Ludo King® changed its Google Play screenshots' });
     await expect(card.getByTestId('growth-change-new')).toBeVisible();
@@ -467,7 +468,7 @@ test.describe('growth competitors', () => {
     await app.startBlankProject();
     await expect(page.getByTestId('growth-badge')).toHaveText('1');
 
-    await viewButton(page, GROWTH_BUTTON).click();
+    await openGrowth(page);
     const card = competitors(page).locator('[data-rival-change]').filter({ hasText: 'Ludo King changed its iPhone screenshots' });
     await expect(card.getByTestId('growth-change-new')).toBeVisible();
     await expect(card.getByRole('img', { name: /now, screenshot/ })).toHaveCount(KING_SHOTS.length);
