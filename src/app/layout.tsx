@@ -1,5 +1,6 @@
 import type {Metadata, Viewport} from 'next';
-import {Geist, Geist_Mono} from 'next/font/google';
+import { GeistSans } from 'geist/font/sans';
+import { GeistMono } from 'geist/font/mono';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { Analytics } from "@/components/Analytics";
@@ -7,16 +8,6 @@ import { AdSense } from "@/components/AdSense";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 import { PANEL_WINDOW_BOOT_SCRIPT } from "@/lib/panels/boot";
-
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
-});
-
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
-  subsets: ['latin'],
-});
 
 export const metadata: Metadata = {
   title: 'Open Screenshot Generator - Design & Translate App Store Graphics',
@@ -55,7 +46,7 @@ export default function RootLayout({
             skeleton can paint. See lib/panels/boot.ts. */}
         <script dangerouslySetInnerHTML={{ __html: PANEL_WINDOW_BOOT_SCRIPT }} />
       </head>
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`} suppressHydrationWarning>
+      <body className={`${GeistSans.variable} ${GeistMono.variable} antialiased`} suppressHydrationWarning>
         <ThemeProvider>
           {children}
           <Toaster />

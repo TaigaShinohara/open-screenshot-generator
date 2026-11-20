@@ -1,101 +1,116 @@
 import { test, expect } from '../fixtures/test';
 import { canvasBottomBarsOverlap } from '../helpers/canvas';
+import { put, waitForProject } from '../fixtures/db';
 
-/**
- * The two floating bars along the bottom of the canvas.
- *
- * One holds the selection tool, the pan tool and undo/redo, and is centred on
- * the canvas. The other holds the zoom control and is pinned to the bottom
- * right. They are positioned independently, so whether they collide comes down
- * to how wide the canvas is, and the app already knows this: the tool bar
- * carries `max-md:left-3 max-md:translate-x-0` under a comment saying it is
- * "pushed to the left edge on a phone so it and the zoom pill share the bottom
- * row instead of sitting on top of each other".
- *
- * The escape hatch is real. Its breakpoint is not: `md` is 768px, and the two
- * bars start overlapping just under 1280px. Measured, at a blank project with
- * the palette and the dock both open:
- *
- *   1600px  tools 699..870   zoom 1029..1264   clear
- *   1440px  tools 619..790   zoom  869..1104   clear
- *   1280px  tools 539..710   zoom  709..944    touching
- *   1180px  tools 489..660   zoom  609..844    overlapping by 51px
- *   1080px  tools 439..610   zoom  509..744    overlapping by 101px, and the
- *                                              Undo button itself is buried
- *
- * At the last of those, a tablet in landscape, Undo cannot be tapped at all:
- * Playwright reports the Zoom Out button intercepting the pointer.
- */
-
-/** Widths where the layout is known to be correct. */
-const ROOMY = [
-  { label: 'wide desktop', width: 1600, height: 1000 },
-  { label: 'desktop', width: 1440, height: 900 },
+const SIZES = [
+  { width: 1600, height: 1000 },
+  { width: 1440, height: 900 },
+  { width: 1180, height: 820 },
+  { width: 1080, height: 810 },
+  { width: 768, height: 1024 },
+  { width: 390, height: 844 },
+  { width: 320, height: 740 },
 ];
 
-/**
- * Widths where the bars collide today: wider than the `md` escape hatch, and
- * narrower than the room the centred bar actually needs. A tablet in landscape
- * and a small laptop both live in here.
- */
-const CRAMPED = [
-  { label: 'small laptop', width: 1180, height: 820 },
-  { label: 'tablet landscape', width: 1080, height: 810 },
-];
-// 1280px is left out of both lists on purpose: the two bars are exactly
-// touching there, and a test that hangs on a single pixel is a test that will
-// start flaking the next time a padding changes.
+test('canvas controls remain separate at desktop, tablet and phone widths', async ({ app, page }) => {
+  await app.startBlankProject();
+  for (const size of SIZES) {
+    await page.setViewportSize(size);
+    await expect(page.locator('[data-canvas-tools]')).toBeVisible();
+    await expect(page.locator('[data-canvas-zoom]')).toBeVisible();
+    await expect.poll(() => canvasBottomBarsOverlap(page), { message: String(size.width) }).toBe(false);
+    const hiddenByAnotherControl = await page.locator('[data-canvas-controls] button:enabled').evaluateAll((buttons) =>
+      buttons.filter((button) => {
+        const rect = button.getBoundingClientRect();
+        if (!rect.width || !rect.height) return false;
+        const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+        return !hit || !button.contains(hit);
+      }).map((button) => button.getAttribute('title') || button.textContent)
+    );
+    expect(hiddenByAnotherControl, String(size.width)).toEqual([]);
+  }
+});
 
-test.describe('the canvas bottom bars', () => {
-  test('keep out of each other at desktop widths', async ({ app, page }) => {
-    await app.startBlankProject();
+test('Undo, Redo and zoom accept real clicks at a small laptop width', async ({ app, page }) => {
+  await page.setViewportSize({ width: 1080, height: 810 });
+  await app.startBlankProject();
+  await app.ensurePaletteOpen();
+  await app.addElementFrom('Basic', 'Text', 'basic:text');
+  await app.undoButton.click();
+  await expect(app.elementsOn(0)).toHaveCount(0);
+  await app.redoButton.click();
+  await expect(app.elementsOn(0)).toHaveCount(1);
+  const before = await app.zoomLevel();
+  await app.zoomOutButton.click();
+  expect(await app.zoomLevel()).toBeLessThan(before);
+  await app.zoomInButton.click();
+  expect(await app.zoomLevel()).toBe(before);
+});
 
-    for (const size of ROOMY) {
-      await page.setViewportSize({ width: size.width, height: size.height });
-      await expect(app.undoButton).toBeVisible();
-      expect(
-        await canvasBottomBarsOverlap(page),
-        `the tool bar and the zoom pill overlap at ${size.label}, ${size.width}px`
-      ).toBe(false);
+test('a long project name and motion timeline stay clear of the canvas controls', async ({ app, page }, testInfo) => {
+  await app.startBlankProject();
+  await app.ensurePaletteOpen();
+  await app.addElementFrom('Basic', 'Text', 'basic:text');
+  const stored = await waitForProject(page, row => JSON.stringify(row.projectData).includes('New Text'));
+  const boards = JSON.parse(JSON.stringify(stored.projectData));
+  boards[0].previewDurationSeconds = 3;
+  boards[0].elements[0].animation = { enter: 'fade', enterDelay: 0, enterDuration: 0.2 };
+  await put(page, 'projects', { ...stored, timestamp: new Date(), name: 'とても長いプロジェクト名・日本語とEnglishを含むストア画像の最終確認用プロジェクト', projectData: boards });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await app.waitForBoot();
+  const timeline = page.locator('[data-preview-timeline]');
+  await expect(timeline).toBeVisible();
+  for (const size of SIZES) {
+    await page.setViewportSize(size);
+    await expect.poll(async () => {
+      const controls = await page.locator('[data-canvas-controls]').boundingBox();
+      const track = await timeline.boundingBox();
+      return !!controls && !!track && track.y + track.height <= controls.y;
+    }, { message: String(size.width) }).toBe(true);
+    if (size.width >= 768) {
+      const name = page.getByTitle('Double-click to rename project');
+      await expect(name).toBeVisible();
+      const fits = await name.evaluate(element => {
+        const text = element.getBoundingClientRect();
+        const footer = element.closest('[data-canvas-controls]')!;
+        const overlaps = (other: Element) => {
+          const box = other.getBoundingClientRect();
+          return text.left < box.right && text.right > box.left && text.top < box.bottom && text.bottom > box.top;
+        };
+        return [...footer.querySelectorAll('[data-canvas-tools], [data-canvas-zoom]')].every(other => !overlaps(other));
+      });
+      expect(fits, String(size.width)).toBe(true);
     }
-  });
+  }
+  await page.screenshot({ path: testInfo.outputPath('timeline-controls-phone.png') });
+});
 
-  test('keep out of each other at tablet and small laptop widths too', async ({ app, page }) => {
-    // Expected to fail: this documents a defect that is still in the app, and
-    // it reports loudly the moment somebody fixes it. The fix is a breakpoint,
-    // not a layout: the tool bar's `max-md:` escape hatch needs to fire at the
-    // width where the collision actually starts, around `lg` or `xl`.
-    // Declared inside the test on purpose. At describe level it would leak on
-    // to every test after it.
-    test.fail();
-
-    await app.startBlankProject();
-
-    for (const size of CRAMPED) {
-      await page.setViewportSize({ width: size.width, height: size.height });
-      await expect(app.undoButton).toBeVisible();
-      expect(
-        await canvasBottomBarsOverlap(page),
-        `the tool bar and the zoom pill overlap at ${size.label}, ${size.width}px`
-      ).toBe(false);
-    }
-  });
-
-  test('Undo is reachable by a real click wherever the bars are laid out', async ({ app, page }) => {
+test.describe('touch controls', () => {
+  test.use({ hasTouch: true });
+  test('Undo, Redo and zoom accept finger taps on a phone', async ({ app, page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
     await app.startBlankProject();
     await app.ensurePaletteOpen();
     await app.addElementFrom('Basic', 'Text', 'basic:text');
-    await expect(app.elementsOn(0)).toHaveCount(1);
-
-    // Skipped rather than failed on the widths above: the overlap is already
-    // covered by its own test, and a second red mark for the same defect only
-    // makes the report harder to read.
-    test.skip(
-      await canvasBottomBarsOverlap(page),
-      'the zoom pill covers Undo at this width, which the overlap test above owns'
-    );
-
-    await app.undoButton.click();
+    const palette = page.locator('[data-mobile="true"][data-sidebar="sidebar"]');
+    if (await palette.isVisible()) {
+      const viewport = page.viewportSize()!;
+      await page.touchscreen.tap(viewport.width - 8, viewport.height / 2);
+      await expect(palette).toBeHidden();
+    }
+    const tap = async (button: import('@playwright/test').Locator) => {
+      const box = await button.boundingBox();
+      expect(box).not.toBeNull();
+      await page.touchscreen.tap(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    };
+    await tap(app.undoButton);
     await expect(app.elementsOn(0)).toHaveCount(0);
+    await tap(app.redoButton);
+    await expect(app.elementsOn(0)).toHaveCount(1);
+    const before = await app.zoomLevel();
+    await tap(app.zoomOutButton);
+    expect(await app.zoomLevel()).toBeLessThan(before);
+    await tap(app.zoomInButton);
+    expect(await app.zoomLevel()).toBe(before);
   });
 });

@@ -1051,6 +1051,13 @@ test('a project on its way to another window is turned down here until it has go
     second();
     assert.equal(await holdProjectLock('twice'), true);
     releaseProjectLock('twice');
+
+    assert.equal(await holdProjectLock('cancelled'), true);
+    const cancelled = startHandOver('cancelled');
+    cancelled(false);
+    assert.equal(isProjectLockHeld('cancelled'), true);
+    assert.equal(await holdProjectLock('cancelled'), true);
+    releaseProjectLock('cancelled');
   } finally {
     locks.restore();
   }

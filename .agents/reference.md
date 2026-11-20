@@ -1169,7 +1169,8 @@ Read this alongside `infra/vps/README.md`, which is the operator's half.
 | [cloud/CloudAutoSaveChip.tsx](../src/components/open-screenshot-generator/cloud/CloudAutoSaveChip.tsx) | the pill beside the project name, which is the feature's only UI |
 | [editorPreferences.ts](../src/lib/editorPreferences.ts) | the `cloudAutoSave` switch (and the canvas wheel one), shared by Settings and its readers |
 | [cloud/CloudSaveConflictDialog.tsx](../src/components/open-screenshot-generator/cloud/CloudSaveConflictDialog.tsx) | shown only when the remote row moved since this device last wrote it |
-| [infra/vps/pb-hooks/060_projects.pb.js](../infra/vps/pb-hooks/060_projects.pb.js) | the eleven routes |
+| [infra/vps/pb-hooks/060_projects.pb.js](../infra/vps/pb-hooks/060_projects.pb.js) | the thirteen routes |
+| [infra/vps/pb-hooks/lib/cloudAssets.js](../infra/vps/pb-hooks/lib/cloudAssets.js) | transactional file uploads, including revision checks for conditional updates |
 | [infra/vps/pb-migrations/1786300000_openscreengen_projects.js](../infra/vps/pb-migrations/1786300000_openscreengen_projects.js) | `cloud_projects` + `cloud_project_assets` + six settings rows |
 
 ### The rules that are easy to break
@@ -1184,9 +1185,13 @@ Read this alongside `infra/vps/README.md`, which is the operator's half.
 
 ### Auto save
 
-On by default, and armed by the open project rather than by a button, so creating, opening or importing one is all it takes. [autoSave.ts](../src/lib/cloud/autoSave.ts) owns the whole state machine; the layout only tells it a commit landed (one line inside `scheduleProjectSave`) and hands it `flushProjectSave`, because a push reads the stored Dexie row and the editor's own write is 600ms behind the canvas.
+Off by default. The global switch permits automatic updates only for projects whose `cloudLinks.autoSaveConsent` records a manual cloud save or an explicit open of the owner's cloud copy. Legacy links, new projects, imports, shared links and copies opened under a new local id grant no permission. [autoSave.ts](../src/lib/cloud/autoSave.ts) owns the state machine; the layout reports commits and passes `flushProjectSave`, because each push reads the stored Dexie row. A failed local flush stops the push before any cloud write.
 
-The cadence, all in that file: push 15s after the edits go quiet, but never later than 90s after the first unsaved one, never closer together than 25s, and a project with no cloud copy yet gets its first push 20s after it opens even untouched. That last number is what keeps clicking through four templates from leaving four projects in the cloud (the account limit is 30). Hiding the tab pushes early, since that is how most sessions end; `pagehide` deliberately gets nothing, because a request killed mid flight can still land while this device never records that it did, and the next save would then report a conflict with itself.
+The cadence is 5s after edits stop, a 30s ceiling from the first unsaved edit, and at least 8s between pushes. There is no automatic first save. Hiding the tab can push authorized edits early; `pagehide` starts no request, because a terminated request could land without this device recording its revision.
+
+`saveProjectToCloud` requires an explicit `origin`. Manual saves use the existing create-or-update POST and record consent. Automatic saves require matching account permission and use `PUT /projects/{recordId}` with `expected_record_id` and `expected_updated`. The backend checks and updates that exact row in one transaction. Missing records are never recreated; changed revisions open the existing conflict flow. Older backends without the PUT route refuse the update rather than receiving a fallback POST.
+
+Both save paths upload files with `PUT /projects/{recordId}/assets`, passing the document's project id and the revision returned by the previous write in that save. The backend checks the account, record, project and revision in the same transaction as the file and byte count writes. A response advances the local link only when its `previousUpdated` matches the requested revision. Another device's intervening document save causes a conflict, so a late file upload cannot make that device's revision look like this device's own save. Older backends receive no fallback asset POST; the document remains saved with its missing files reported.
 
 Failures are most of that file, and the rule is that it never decides anything for the user:
 

@@ -8,11 +8,12 @@
 //
 //   listProjects  GET    /api/openscreengen/projects
 //   saveProject   POST   /api/openscreengen/projects                        (multipart)
+//   saveProject   PUT    /api/openscreengen/projects/:id                    (conditional multipart)
 //   getProject    GET    /api/openscreengen/projects/:id
 //   deleteProject DELETE /api/openscreengen/projects/:id
 //   setShared     PUT    /api/openscreengen/projects/:id/share
 //   fetchDoc      GET    /api/openscreengen/projects/:id/doc
-//   uploadAsset   POST   /api/openscreengen/projects/:id/assets             (multipart)
+//   uploadAsset   PUT    /api/openscreengen/projects/:id/assets             (conditional multipart)
 //   fetchAsset    GET    /api/openscreengen/projects/:id/assets/:assetId
 //
 // and three that take a share slug instead of a token, for a project whose owner
@@ -127,13 +128,23 @@ export interface CloudSaveInput {
   docEncoding: 'none' | 'gzip';
   /** Every blob the document references, so the server can say what it lacks. */
   manifestAssets: Array<{ id: string; kind: 'media' | 'font' }>;
+  /** Both fields are required for an update that must not create a cloud row. */
+  expectedRecordId?: string;
+  expectedUpdated?: string;
 }
 
 export interface CloudAssetUpload {
+  projectId: string;
+  expectedUpdated: string;
   assetId: string;
   kind: 'media' | 'font';
   blob: Blob;
   meta: Record<string, unknown>;
+}
+
+export interface CloudAssetUploadResult {
+  previousUpdated: string;
+  updated: string;
 }
 
 export const cloudApi = {
@@ -186,12 +197,22 @@ export const cloudApi = {
     form.set('format_version', String(input.formatVersion));
     form.set('doc_encoding', input.docEncoding);
     form.set('manifest_assets', JSON.stringify(input.manifestAssets));
+    if (input.expectedRecordId || input.expectedUpdated) {
+      if (!input.expectedRecordId || !input.expectedUpdated) {
+        throw new CloudRequestError('The cloud copy must be opened or saved before automatic updates', 400);
+      }
+      form.set('expected_record_id', input.expectedRecordId);
+      form.set('expected_updated', input.expectedUpdated);
+    }
     // A filename is required by the multipart encoding and is never shown:
     // PocketBase renames every upload to its own hashed form on save.
     form.append('doc', input.doc, input.docEncoding === 'gzip' ? 'project.json.gz' : 'project.json');
 
-    const payload = await request<CloudSaveResult>('/api/openscreengen/projects', {
-      method: 'POST',
+    const path = input.expectedRecordId
+      ? `/api/openscreengen/projects/${encodeURIComponent(input.expectedRecordId)}`
+      : '/api/openscreengen/projects';
+    const payload = await request<CloudSaveResult>(path, {
+      method: input.expectedRecordId ? 'PUT' : 'POST',
       // No Content-Type: the browser sets it, with the multipart boundary that
       // it alone knows. Setting it by hand produces a body the server cannot
       // parse, and the error names neither the header nor the boundary.
@@ -201,24 +222,29 @@ export const cloudApi = {
   },
 
   /**
-   * One blob. Answers with the project's new `updated`, which the caller has to
-   * keep: storing an asset restates `asset_bytes` on the project row, so the
-   * stamp `saveProject` handed back is stale as soon as the first upload lands.
+   * Upload one blob against the revision returned by this save's previous
+   * write. Both revision stamps must be confirmed before the caller advances.
    */
-  async uploadAsset(projectRecordId: string, asset: CloudAssetUpload): Promise<string> {
+  async uploadAsset(projectRecordId: string, asset: CloudAssetUpload): Promise<CloudAssetUploadResult> {
     requireSession();
+    if (!asset.projectId || !asset.expectedUpdated) {
+      throw new CloudRequestError('The cloud copy must be saved before uploading its files', 400);
+    }
 
     const form = new FormData();
+    form.set('project_id', asset.projectId);
+    form.set('expected_record_id', projectRecordId);
+    form.set('expected_updated', asset.expectedUpdated);
     form.set('asset_id', asset.assetId);
     form.set('kind', asset.kind);
     form.set('meta', JSON.stringify(asset.meta));
     form.append('file', asset.blob, `${asset.assetId}.bin`);
 
-    const payload = await request<{ updated?: string }>(
+    const payload = await request<Partial<CloudAssetUploadResult>>(
       `/api/openscreengen/projects/${encodeURIComponent(projectRecordId)}/assets`,
-      { method: 'POST', body: form }
+      { method: 'PUT', body: form }
     );
-    return payload.updated ?? '';
+    return { previousUpdated: payload.previousUpdated ?? '', updated: payload.updated ?? '' };
   },
 
   async deleteProject(id: string): Promise<void> {

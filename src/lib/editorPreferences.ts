@@ -19,12 +19,12 @@
 import { useCallback, useSyncExternalStore } from 'react';
 
 export type EditorPreference =
-  /** Keep the open project in our cloud without anybody clicking Save. */
+  /** Update cloud projects with this device's project-specific permission. */
   | 'cloudAutoSave'
   /**
    * Keep projects already saved to the user's OWN storage up to date there:
    * their Google Drive folder, their gists. A different destination from
-   * `cloudAutoSave`, with a different default, for the reason in DEFAULTS.
+   * `cloudAutoSave`, with its own destination and timing.
    */
   | 'accountAutoSync'
   /** Turn a mouse wheel over the canvas into zoom rather than scroll. */
@@ -51,15 +51,10 @@ const KEYS: Record<EditorPreference, string> = {
 /**
  * What each switch does before anybody has an opinion.
  *
- * Cloud auto save is ON, and is the whole point of that feature: a copy in the
- * cloud that only exists once somebody remembers to ask for one is a copy most
- * people never have. Wheel zoom is on because a wheel is the control people
+ * Both cloud destinations default to off. Each project also needs a manual
+ * save or an explicit open from that destination before automatic updates.
+ * Wheel zoom is on because a wheel is the control people
  * reach for to zoom, and a trackpad is never treated as one (see CanvasArea).
- *
- * Syncing to the user's own storage is OFF, and the asymmetry is deliberate
- * rather than cautious. Our cloud is ours to fill; a person's Drive quota,
- * their bandwidth and their permanent gist commit history are theirs, and
- * writing to them unattended is a thing to be asked for rather than assumed.
  *
  * The safe area guide is on: some devices show far less of a header than an
  * iPhone does, and the guide is the only place that says so while you design.
@@ -73,7 +68,7 @@ const KEYS: Record<EditorPreference, string> = {
  * are the ones that have not been through everybody's hands yet.
  */
 const DEFAULTS: Record<EditorPreference, boolean> = {
-  cloudAutoSave: true,
+  cloudAutoSave: false,
   accountAutoSync: false,
   wheelZoom: true,
   creativeSafeArea: true,

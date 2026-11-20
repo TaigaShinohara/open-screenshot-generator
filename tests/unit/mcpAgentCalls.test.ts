@@ -43,6 +43,20 @@ function call(name: string, args: Record<string, unknown>) {
 }
 
 type CallResult = { result?: { isError?: boolean; content?: Array<{ type: string; text?: string }> } };
+
+test('an installation refuses design writes while project reads remain available', async () => {
+  let writes = 0;
+  const api = {
+    mutationBlockReason: 'An update is being installed',
+    setBackground: () => { writes += 1; },
+    listArtboards: () => [],
+  } as unknown as McpDesignApi;
+  const response = await handleMcpMessage({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'set_background', arguments: {} } }, api);
+  assert.equal((response as CallResult).result?.isError, true);
+  assert.equal(writes, 0);
+  const read = await handleMcpMessage({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'list_artboards', arguments: {} } }, api);
+  assert.notEqual((read as CallResult).result?.isError, true);
+});
 const textOf = (response: unknown) => (response as CallResult).result?.content?.[0]?.text ?? '';
 const refused = (response: unknown) =>
   (response as CallResult).result?.isError === true && textOf(response) === WEB_LINKS_OFF;

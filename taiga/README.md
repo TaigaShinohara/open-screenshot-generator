@@ -24,16 +24,63 @@ agent catalog stays in sync (upstream CONTRIBUTING rule).
 
 ## 2. store_listing_pack integration
 
-`taiga/render_to_pack.py` runs the CLI (`fill`, `render`, `verify`) and places
-the PNGs into the fixed pack layout used by the store_listing_pack skill:
+`taiga/render_to_pack.py` builds and runs this checkout's CLI (`fill`, `render`,
+`verify`). It reads this checkout's template catalog and places verified PNGs
+into the pack layout used by the store_listing_pack skill:
 
 ```
 ~/workspace/store-packs/<app-slug>/<version>/02_images/screenshots/<store>/<device>/
 ```
 
-With `--validate` it also runs that skill's `validate_pack.py` at the end.
-Screenshots must be real screens of the app; this script only moves files the
-CLI rendered from the shots you give it.
+Install the root and CLI dependencies with `npm ci` and `npm ci --prefix cli`.
+Use Node 20.12+ and Python 3.10+. Build the local editor with `npm run build`,
+or start this checkout with `npm run dev` and pass its local URL:
+
+```bash
+python3 taiga/render_to_pack.py --app-slug my-app --version 1.0.0 \
+  --shots ./shots --template taiga-md3.json --store apple --device iphone \
+  --editor-url http://127.0.0.1:9002
+```
+
+`taiga-md3`, `taiga-md3.json` and `template_taiga-md3` name the same template.
+Use `taiga-glass` for the other style. With no template flag, the script uses
+`defaultTemplate` from `taiga-defaults.json`. It exports the template's Japanese
+and English text by default. `--locales ja` or `--locales en-US` selects one
+language; the template must contain every language requested. The script does
+not translate copy. Read the template text and replace its placeholders before
+preparing a release.
+
+| Store | Device | Output size |
+| --- | --- | --- |
+| `apple` | `iphone` (default) | 1206 × 2622 |
+| `apple` | `ipad` | 2064 × 2752 |
+| `google-play` | `android` (default), `phone` | 1080 × 1920 |
+| `google-play` | `tablet-7` | 1080 × 1920 |
+| `google-play` | `tablet-10` | 1440 × 2560 |
+
+Unknown devices and combinations from different stores stop before rendering.
+Apple and Google Play rules apply to the selected output, including image
+counts for each language. `--pack-root <directory>` overrides the pack root.
+
+Each run uses a fresh work directory. Only PNGs named by that run's render
+manifest enter the pack. The script checks their names, sizes and language
+counts, then verifies a staged copy. A successful run replaces the selected
+store/device directory and writes `osg.manifest.json` there with image hashes,
+the CLI and template hashes, and the verification result. Other devices and
+versions stay in place. Failed rendering or validation keeps the existing
+image directory. Runs that publish to the same app/version hold a lock while
+checking and replacing its images.
+
+With `--validate`, the script also runs the configured `validate_pack.py` on a
+staged copy of the entire pack before replacing images. A missing validator or
+a failing pack check stops the run. Prepare any other files that validator
+requires in the pack first. Without `--validate`, the script checks the images
+and does not claim the rest of the store listing is complete.
+
+Screenshots must be real screens of the app. The script places the shots you
+give it into the template and does not capture an app or upload store files.
+The editor and catalog stay local; external fonts and artwork must already be
+in the build or cache for this offline render.
 
 ## 3. House defaults
 

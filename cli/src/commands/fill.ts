@@ -235,6 +235,11 @@ function findCheckoutTemplates(from: string): string | null {
 }
 
 async function loadCatalog(ctx: CommandContext): Promise<Project[]> {
+  const templatesDir = flagString(ctx.args.flags, 'templates-dir') ?? ctx.config.templatesDir;
+  const explicitDir = templatesDir ? path.resolve(ctx.root, templatesDir) : null;
+  if (explicitDir && !isDirectory(explicitDir)) {
+    throw usageError(`No template catalog at ${explicitDir}`, 'Point --templates-dir at a directory of template JSON files');
+  }
   const assetsBaseUrl =
     flagString(ctx.args.flags, 'assets-base-url') ?? ctx.config.assetsBaseUrl ?? DEFAULTS.assetsBaseUrl;
   const source = resolveEditor({
@@ -243,7 +248,7 @@ async function loadCatalog(ctx: CommandContext): Promise<Project[]> {
     assetsBaseUrl,
   });
   const manifest = loadManifest(manifestPath());
-  const dirs = [
+  const dirs = explicitDir ? [explicitDir] : [
     ...(source.kind === 'local' ? [path.join(source.dir, 'data', 'projects')] : []),
     ...(findCheckoutTemplates(ctx.root) ? [findCheckoutTemplates(ctx.root)!] : []),
   ].filter((dir, index, all) => all.indexOf(dir) === index && isDirectory(dir));
@@ -263,6 +268,7 @@ async function loadCatalog(ctx: CommandContext): Promise<Project[]> {
       }
     }
     if (text === null) {
+      if (explicitDir) return null;
       // Not on disk. If the packaged manifest knows the path it is cacheable
       // artwork and hydrate handles the digest check and the offline error.
       const hydrated = await hydrate(requestPath, { manifest, assetsBaseUrl, offline: ctx.offline });
@@ -306,6 +312,9 @@ async function loadCatalog(ctx: CommandContext): Promise<Project[]> {
 
   const templates = loaded.filter((entry): entry is Project => entry !== null && entry.projectData.length > 0);
   if (templates.length === 0) {
+    if (explicitDir) {
+      throw usageError(`No registered templates in ${explicitDir}`, 'Use a template catalog from this checkout');
+    }
     throw driverError(
       'No templates could be loaded.',
       ctx.offline
@@ -319,13 +328,14 @@ async function loadCatalog(ctx: CommandContext): Promise<Project[]> {
 
 const flatten = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-function findTemplate(templates: Project[], wanted: string): Project {
-  const target = flatten(wanted);
+export function findTemplate(templates: Project[], wanted: string): Project {
+  const normalized = wanted.trim().replace(/\.json$/i, '');
+  const target = flatten(normalized);
   const exact = templates.find(
     (entry) =>
       flatten(entry.id) === target ||
       flatten(entry.sourceId ?? '') === target ||
-      flatten(entry.id) === flatten(`template_${wanted}`) ||
+      flatten(entry.id) === flatten(`template_${normalized}`) ||
       flatten(entry.name) === target
   );
   if (exact) return exact;

@@ -313,6 +313,7 @@ export interface McpProjectImage {
 }
 
 export interface McpDesignApi {
+  readonly mutationBlockReason?: string | null;
   /**
    * Lightweight list of every artboard on the canvas. A locale reads that
    * language's projection, where the only thing that can differ is the element
@@ -3254,6 +3255,10 @@ export async function handleMcpMessage(
         });
       }
       const args = params?.arguments ?? {};
+      const blocked = api.mutationBlockReason;
+      if (!READ_ONLY_TOOLS.has(name!) && typeof blocked === 'string' && blocked) {
+        return rpcResult(id, { content: [{ type: 'text', text: blocked }], isError: true });
+      }
       // The one place every call passes, so no tool can be missed. Rust's word
       // on the process, or the page's on the chat, is enough to turn it on.
       if (ctx.agent && (ctx.folders === true || webLinksOff(api)) && hasWebLink(args)) {

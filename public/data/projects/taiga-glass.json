@@ -127,21 +127,21 @@
           "name": "Headline White",
           "position": {
             "x": 74.79,
-            "y": 590.79
+            "y": 584
           },
           "size": {
-            "width": 934.88,
-            "height": 318.84
+            "width": 1056.42,
+            "height": 200
           },
           "rotation": 0,
           "scale": 1,
           "content": "あなたの毎日に、",
-          "fontSize": 41.13,
+          "fontSize": 34.2,
           "color": "#FFFFFF",
           "fontFamily": "Noto Sans JP",
           "fontWeight": "700",
           "textAlign": "left",
-          "lineHeight": 1.12
+          "lineHeight": 1.3
         },
         {
           "id": "tpl_tgls_ab1_h2",
@@ -149,21 +149,21 @@
           "name": "Headline Yellow",
           "position": {
             "x": 74.79,
-            "y": 900.26
+            "y": 784
           },
           "size": {
-            "width": 934.88,
-            "height": 168.8
+            "width": 1056.42,
+            "height": 200
           },
           "rotation": 0,
           "scale": 1,
           "content": "ちょうどいいアプリ",
-          "fontSize": 41.13,
+          "fontSize": 34.2,
           "color": "#BFD9EA",
           "fontFamily": "Noto Sans JP",
           "fontWeight": "700",
           "textAlign": "left",
-          "lineHeight": 1.12
+          "lineHeight": 1.3
         },
         {
           "id": "tpl_tgls_ab1_p1s",
@@ -421,7 +421,49 @@
           "textAlign": "center",
           "lineHeight": 1.1
         }
-      ]
+      ],
+      "localization": {
+        "baseLocale": "ja",
+        "locales": [
+          {
+            "code": "en-US"
+          }
+        ]
+      },
+      "localized": {
+        "en-US": {
+          "tpl_tgls_ab1_h1": {
+            "content": "For your day,",
+            "origin": "auto",
+            "sourceHash": "50d59b11"
+          },
+          "tpl_tgls_ab1_h2": {
+            "content": "An app that fits",
+            "origin": "auto",
+            "sourceHash": "77fd8347"
+          },
+          "tpl_tgls_ab1_p1t": {
+            "content": "Easy to use",
+            "origin": "auto",
+            "sourceHash": "549d1914"
+          },
+          "tpl_tgls_ab1_p2t": {
+            "content": "Start right away",
+            "origin": "auto",
+            "sourceHash": "7c2c9865"
+          },
+          "tpl_tgls_ab1_p3t": {
+            "content": "Everyday use",
+            "origin": "auto",
+            "sourceHash": "f0face98"
+          },
+          "tpl_tgls_ab1_p4t": {
+            "content": "Try it for free",
+            "origin": "auto",
+            "sourceHash": "4cbfee88"
+          }
+        }
+      }
     },
     {
       "id": "tpl_tgls_ab2",
@@ -497,12 +539,12 @@
           "rotation": 0,
           "scale": 1,
           "content": "いちばんの機能を、\nシンプルに",
-          "fontSize": 37.4,
+          "fontSize": 31.2,
           "color": "#FFFFFF",
           "fontFamily": "Noto Sans JP",
           "fontWeight": "700",
           "textAlign": "center",
-          "lineHeight": 1.15
+          "lineHeight": 1.3
         },
         {
           "id": "tpl_tgls_ab2_dev",
@@ -651,6 +693,28 @@
         "color1": "#0B1E3A",
         "color2": "#16304F",
         "angle": 160
+      },
+      "localization": {
+        "baseLocale": "ja",
+        "locales": [
+          {
+            "code": "en-US"
+          }
+        ]
+      },
+      "localized": {
+        "en-US": {
+          "tpl_tgls_ab2_badge_t": {
+            "content": "POINT 01",
+            "origin": "auto",
+            "sourceHash": "0d8085a8"
+          },
+          "tpl_tgls_ab2_h": {
+            "content": "Your main feature,\nmade simple",
+            "origin": "auto",
+            "sourceHash": "ce1a8b0d"
+          }
+        }
       }
     },
     {
@@ -727,12 +791,12 @@
           "rotation": 0,
           "scale": 1,
           "content": "迷わず使える、\n分かりやすい画面",
-          "fontSize": 37.4,
+          "fontSize": 31.2,
           "color": "#FFFFFF",
           "fontFamily": "Noto Sans JP",
           "fontWeight": "700",
           "textAlign": "center",
-          "lineHeight": 1.15
+          "lineHeight": 1.3
         },
         {
           "id": "tpl_tgls_ab4_hand",
@@ -785,6 +849,28 @@
         "color1": "#0B1E3A",
         "color2": "#16304F",
         "angle": 160
+      },
+      "localization": {
+        "baseLocale": "ja",
+        "locales": [
+          {
+            "code": "en-US"
+          }
+        ]
+      },
+      "localized": {
+        "en-US": {
+          "tpl_tgls_ab4_badge_t": {
+            "content": "POINT 02",
+            "origin": "auto",
+            "sourceHash": "10808a61"
+          },
+          "tpl_tgls_ab4_h": {
+            "content": "Easy to use,\nclear screens",
+            "origin": "auto",
+            "sourceHash": "2b9cd957"
+          }
+        }
       }
     },
     {
@@ -861,12 +947,12 @@
           "rotation": 0,
           "scale": 1,
           "content": "ひと目で分かる、\nあなたの記録",
-          "fontSize": 37.4,
+          "fontSize": 31.2,
           "color": "#FFFFFF",
           "fontFamily": "Noto Sans JP",
           "fontWeight": "700",
           "textAlign": "center",
-          "lineHeight": 1.15
+          "lineHeight": 1.3
         },
         {
           "id": "tpl_tgls_ab6_sub",
@@ -923,6 +1009,33 @@
         "color1": "#0B1E3A",
         "color2": "#16304F",
         "angle": 160
+      },
+      "localization": {
+        "baseLocale": "ja",
+        "locales": [
+          {
+            "code": "en-US"
+          }
+        ]
+      },
+      "localized": {
+        "en-US": {
+          "tpl_tgls_ab6_badge_t": {
+            "content": "POINT 03",
+            "origin": "auto",
+            "sourceHash": "0f8088ce"
+          },
+          "tpl_tgls_ab6_h": {
+            "content": "Your progress,\nat a glance",
+            "origin": "auto",
+            "sourceHash": "cf306374"
+          },
+          "tpl_tgls_ab6_sub": {
+            "content": "See daily changes\nin charts\nand numbers.",
+            "origin": "auto",
+            "sourceHash": "9fb9f6d4"
+          }
+        }
       }
     },
     {
@@ -999,12 +1112,12 @@
           "rotation": 0,
           "scale": 1,
           "content": "あなた好みに、\nカスタマイズ",
-          "fontSize": 37.4,
+          "fontSize": 31.2,
           "color": "#FFFFFF",
           "fontFamily": "Noto Sans JP",
           "fontWeight": "700",
           "textAlign": "center",
-          "lineHeight": 1.15
+          "lineHeight": 1.3
         },
         {
           "id": "tpl_tgls_ab8_dev",
@@ -1039,6 +1152,28 @@
         "color1": "#0B1E3A",
         "color2": "#16304F",
         "angle": 160
+      },
+      "localization": {
+        "baseLocale": "ja",
+        "locales": [
+          {
+            "code": "en-US"
+          }
+        ]
+      },
+      "localized": {
+        "en-US": {
+          "tpl_tgls_ab8_badge_t": {
+            "content": "POINT 04",
+            "origin": "auto",
+            "sourceHash": "12808d87"
+          },
+          "tpl_tgls_ab8_h": {
+            "content": "Customize it\nto suit you",
+            "origin": "auto",
+            "sourceHash": "743a5d3b"
+          }
+        }
       }
     }
   ]

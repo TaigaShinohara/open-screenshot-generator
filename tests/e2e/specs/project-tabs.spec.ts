@@ -491,6 +491,61 @@ test.describe('project tabs', () => {
     await expect(app.elementsOn(0)).toHaveCount(2);
   });
 
+  test('a failed project save remains recoverable while another tab is active', async ({ app, page }) => {
+    await openAlphaWithBetaStored(app, page);
+    await openBetaInNewTab(app, page);
+    await tabNamed(page, 'Alpha').click();
+    await expect(activeTab(page)).toContainText('Alpha');
+    await page.evaluate(() => {
+      const state = window as unknown as { blockProjectWrites: boolean };
+      state.blockProjectWrites = true;
+      const original = IDBObjectStore.prototype.put;
+      IDBObjectStore.prototype.put = function(...args: Parameters<IDBObjectStore['put']>) {
+        if (this.name === 'projects' && state.blockProjectWrites) throw new DOMException('Test storage limit', 'QuotaExceededError');
+        return original.apply(this, args);
+      };
+    });
+    await app.addElementFrom('Basic', 'Rectangle', 'basic:rectangle');
+    await expect(app.elementsOn(0)).toHaveCount(2);
+    const recovery = page.locator('[data-save-recovery]');
+    await expect(recovery).toContainText('Alpha');
+    await tabNamed(page, 'Beta').click();
+    await expect(activeTab(page)).toContainText('Beta');
+    await expect(app.elementsOn(0)).toHaveCount(1);
+    await expect(recovery).toContainText('Alpha');
+    await page.evaluate(() => { (window as unknown as { blockProjectWrites: boolean }).blockProjectWrites = false; });
+    await recovery.getByRole('button', { name: 'Retry save', exact: true }).click();
+    await expect(recovery).toHaveCount(0);
+    await expect.poll(async () => (await storedBoards(page, 'tabs_alpha'))[0].elements.length).toBe(2);
+    expect((await storedBoards(page, 'tabs_beta'))[0].elements).toHaveLength(1);
+    await tabNamed(page, 'Alpha').click();
+    await expect(app.elementsOn(0)).toHaveCount(2);
+    await undo(app, page);
+    await expect(app.elementsOn(0)).toHaveCount(1);
+  });
+
+  test('failed undo storage keeps a closing tab and its live history', async ({ app, page }) => {
+    await openAlphaWithBetaStored(app, page);
+    await app.addElementFrom('Basic', 'Rectangle', 'basic:rectangle');
+    await expect(app.elementsOn(0)).toHaveCount(2);
+    await page.evaluate(() => {
+      const original = IDBObjectStore.prototype.put;
+      IDBObjectStore.prototype.put = function(...args: Parameters<IDBObjectStore['put']>) {
+        if (this.transaction.db.name === 'OpenScreenshotGeneratorUndo') {
+          throw new DOMException('Test undo storage limit', 'QuotaExceededError');
+        }
+        return original.apply(this, args);
+      };
+    });
+    await tabNamed(page, 'Alpha').getByRole('button', { name: 'Close Alpha' }).click();
+    await confirmClose(page, 'Close Alpha?');
+    await expect(page.getByText('The tab stays open', { exact: true })).toBeVisible();
+    await expect(activeTab(page)).toContainText('Alpha');
+    await expect(app.elementsOn(0)).toHaveCount(2);
+    await undo(app, page);
+    await expect(app.elementsOn(0)).toHaveCount(1);
+  });
+
   test('a closed tab reopens with its undo history', async ({ app, page }) => {
     await openAlphaWithBetaStored(app, page);
     await app.addElementFrom('Basic', 'Rectangle', 'basic:rectangle');
@@ -1628,12 +1683,13 @@ test.describe('tabs across windows', () => {
       const popupOpened = context.waitForEvent('page');
       await page.getByRole('menuitem', { name: 'Move to new window' }).click();
       opened = await popupOpened;
-      await expect(tabs(page)).toHaveCount(1);
+      await expect(tabs(page)).toHaveCount(2);
     } finally {
       await hold.release();
     }
     const popup = opened as Page;
     await expect(popup.locator('[data-element-id="tabs_beta_rect"]')).toBeVisible({ timeout: 60_000 });
+    await expect(tabs(page)).toHaveCount(1);
 
     // The read this window started for Beta never puts it back here.
     await page.waitForTimeout(1_000);
@@ -1819,7 +1875,37 @@ test.describe('tabs across windows', () => {
     expect(new URL(page.url()).searchParams.get('projectId')).toBe('tabs_alpha');
   });
 
-  test('a project opened again here while its tab moves to another window is asked about, not opened twice', async ({
+  test('failed undo storage keeps a moving tab and its lock in the source window', async ({ app, page, context }) => {
+    await openAlphaWithBetaStored(app, page);
+    await openBetaInNewTab(app, page);
+    await app.addElementFrom('Basic', 'Rectangle', 'basic:rectangle');
+    await expect(app.elementsOn(0)).toHaveCount(2);
+    await page.evaluate(() => {
+      const original = IDBObjectStore.prototype.put;
+      IDBObjectStore.prototype.put = function(...args: Parameters<IDBObjectStore['put']>) {
+        if (this.transaction.db.name === 'OpenScreenshotGeneratorUndo') {
+          throw new DOMException('Test undo storage limit', 'QuotaExceededError');
+        }
+        return original.apply(this, args);
+      };
+    });
+    await tabNamed(page, 'Beta').click({ button: 'right' });
+    const opened = context.waitForEvent('page');
+    await page.getByRole('menuitem', { name: 'Move to new window' }).click();
+    const popup = await opened;
+    try {
+      await expect(page.getByText('The project stayed in this window', { exact: true })).toBeVisible();
+      await expect(tabs(page)).toHaveCount(2);
+      await expect(activeTab(page)).toContainText('Beta');
+      expect(await page.evaluate(async () => (await navigator.locks.query()).held?.some(lock => lock.name === 'open-screenshot-generator.project:tabs_beta'))).toBe(true);
+      await undo(app, page);
+      await expect(app.elementsOn(0)).toHaveCount(1);
+    } finally {
+      await popup.close();
+    }
+  });
+
+  test('a moving tab keeps its source tab and lock until its undo history is durable', async ({
     app,
     page,
     context,
@@ -1829,8 +1915,7 @@ test.describe('tabs across windows', () => {
     await tabNamed(page, 'Alpha').click();
     await expect(app.board(0).locator('[data-element-id="tabs_alpha_rect"]')).toBeVisible();
 
-    // Holding the undo stacks stops Beta's move once its tab has gone, while
-    // its undo stack is written and this window still holds its lock.
+    // Keep the source tab until the destination can read its undo stack.
     const hold = await holdUndoStacks(page);
     let opened: Page | null = null;
     try {
@@ -1838,12 +1923,7 @@ test.describe('tabs across windows', () => {
       const popupOpened = context.waitForEvent('page');
       await page.getByRole('menuitem', { name: 'Move to new window' }).click();
       opened = await popupOpened;
-      await expect(tabs(page)).toHaveCount(1);
-      // Beta opened again here, out of Recent projects.
-      await strip(page).getByRole('button', { name: 'New tab', exact: true }).click();
-      await app.waitForStartDialogReady();
-      await app.startDialog.getByText('Beta', { exact: true }).click();
-      // And the new window waiting for Beta's lock by now.
+      await expect(tabs(page)).toHaveCount(2);
       await expect
         .poll(
           () =>
@@ -1860,12 +1940,7 @@ test.describe('tabs across windows', () => {
     const popup = opened as Page;
     await expect(popup.locator('[data-element-id="tabs_beta_rect"]')).toBeVisible({ timeout: 60_000 });
 
-    // Beta is that window's, so this one asks about it instead of opening it too.
-    const elsewhere = page.getByRole('alertdialog').filter({ hasText: 'This project is open in another window' });
-    await expect(elsewhere).toBeVisible();
     await expect(page.locator('[data-element-id="tabs_beta_rect"]')).toHaveCount(0);
-    // The question hides the strip from the accessibility tree while it is up.
-    await elsewhere.getByRole('button', { name: 'Cancel' }).click();
     await expect(tabs(page)).toHaveCount(1);
     await expect(activeTab(page)).toContainText('Alpha');
     await expect(app.board(0).locator('[data-element-id="tabs_alpha_rect"]')).toBeVisible();

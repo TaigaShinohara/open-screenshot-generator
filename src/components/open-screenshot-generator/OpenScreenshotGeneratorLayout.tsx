@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, useDeferredValue } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, useDeferredValue, useSyncExternalStore } from 'react';
 import { captureNodeToPng } from '@/lib/exportRaster';
 import { updateStudioLive } from '@/lib/device3dStudioLive';
 import { preloadGoogleFonts } from '@/services/fontService';
@@ -102,7 +102,8 @@ import type { LocaleOverrideState } from './LayersPanel';
 import { ExportDialog, type ExportSelection, type VideoExportRequest, type VideoExportProgress } from './ExportDialog';
 import { installHeadlessBridge, type HeadlessHost } from '@/lib/headless/bridge';
 import { canOpenAsProject, canvasStillHolds, sameDocument, type RenderedCanvas } from '@/lib/projectCanvas';
-import { createProjectSaveQueue } from '@/lib/projectSaveQueue';
+import { createProjectSaveQueue, NO_PROJECT_SAVE_FAILURES, type ProjectSave } from '@/lib/projectSaveQueue';
+import { LocalSaveRecovery } from './LocalSaveRecovery';
 import { useProjectTabs } from '@/lib/tabs/useProjectTabs';
 import { summarizeProject } from '@/lib/tabs/summary';
 import { nextActiveAfterClose, otherTabIds, tabIdsRightOf, type TabView } from '@/lib/tabs/tabModel';
@@ -386,7 +387,7 @@ import { LocalFontNotice } from './LocalFontNotice';
 import { ProjectLoadOverlay } from './ProjectLoadOverlay';
 import packageJson from '../../../package.json';
 import { useToast } from '@/hooks/use-toast';
-import { listenUpdateFlush, reportEditsWritten } from '@/lib/updates/client';
+import { fetchUpdateState, listenUpdateState, listenUpdateFlush, reportEditsWritten } from '@/lib/updates/client';
 import { manualCheckToast } from '@/lib/updates/describe';
 import { useUpdateSchedule } from '@/lib/updates/store';
 import { AboutUpdateStatus } from './updates/AboutUpdateStatus';
@@ -500,10 +501,11 @@ const VERSION_INTERVAL_MS = 10 * 60 * 1000;
  * or another document went onto the canvas after the render that made the
  * commit), or the commit would leave the project with no artboards.
  */
-type CommitRefusal = 'exporting' | 'opening' | 'empty';
+type CommitRefusal = 'exporting' | 'opening' | 'empty' | 'updating';
 
 /** What a design tool answers when its commit was turned down. */
 const TOOL_COMMIT_REFUSALS: Record<CommitRefusal, string> = {
+  updating: 'An update is being installed, so nothing was changed. Try again if the update is cancelled.',
   exporting: 'An export is running, so nothing was changed. Send this again once the export finishes.',
   opening:
     'Another project was opened while this call ran, so nothing was changed. Check list_projects for the one open now before you send it again.',
@@ -512,6 +514,7 @@ const TOOL_COMMIT_REFUSALS: Record<CommitRefusal, string> = {
 
 /** Why work the user waited for (a translation, images being read) was not saved. */
 const UNSAVED_RESULT_REASONS: Record<CommitRefusal, string> = {
+  updating: 'The update is being installed. Try again if the update is cancelled.',
   exporting: 'An export was running. Try again once it finishes.',
   opening: 'Another project was opened in the meantime. Open the project again and try once more.',
   empty: 'A project keeps at least one artboard.',
@@ -1084,6 +1087,9 @@ export function OpenScreenshotGeneratorLayout() {
   // call or a stray drag landing mid-swap cannot write a temporary render into
   // the project.
   const isExportingRef = useRef(false);
+  const updateInstallingRef = useRef(false);
+  const [isInstallingUpdate, setIsInstallingUpdate] = useState(false);
+  const appViewRef = useRef<HTMLDivElement>(null);
   /**
    * The newest thing the room said while an export was holding the canvas.
    *
@@ -1319,6 +1325,7 @@ export function OpenScreenshotGeneratorLayout() {
     pastePoint: Point | null;
   } | null>(null);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
+  const canvasControlsRef = useRef<HTMLDivElement>(null);
 
   // The headless bridge the npm CLI drives (window.__osg). The host object is
   // rebuilt on every render because it closes over the handlers, so the effect
@@ -1414,9 +1421,24 @@ export function OpenScreenshotGeneratorLayout() {
         })
         .catch((error) => {
           console.error("Error saving project to Dexie:", error);
+          throw error;
         })
     )
   );
+  const localSaveFailures = useSyncExternalStore(
+    projectSaves.subscribe,
+    projectSaves.getFailures,
+    () => NO_PROJECT_SAVE_FAILURES
+  );
+  useLayoutEffect(() => {
+    const controls = canvasControlsRef.current;
+    if (!controls) return;
+    const update = () => controls.parentElement?.style.setProperty('--canvas-controls-height', `${controls.offsetHeight}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(controls);
+    return () => observer.disconnect();
+  }, [loadPhase]);
   // Where a tab's undo stack waits while the tab is out of memory
   // (src/lib/tabs/historyStore.ts): written once as it sleeps, moves to another
   // window or closes, and read back when it opens. It counts for as long as this
@@ -1435,6 +1457,7 @@ export function OpenScreenshotGeneratorLayout() {
       if (!mayWriteProject(projectId)) return Promise.resolve();
       return undoStore.save(projectId, snapshot, options).catch((error) => {
         console.error('Could not keep the undo history of', projectId, error);
+        throw error;
       });
     },
     [undoStore]
@@ -1454,7 +1477,7 @@ export function OpenScreenshotGeneratorLayout() {
     // switch, when the budget needs the room. A read of it waits for the write.
     onSleep: (project) => {
       if (!project.openedSnapshot) sleptWithChangesRef.current.add(project.projectId);
-      void saveUndo(project.projectId, undoSnapshotOf(project), { after: nextIdle() });
+      void saveUndo(project.projectId, undoSnapshotOf(project), { after: nextIdle() }).catch(() => {});
     },
     readView: () => readActiveTabViewRef.current(),
   });
@@ -1476,10 +1499,10 @@ export function OpenScreenshotGeneratorLayout() {
   /** Let go of a project's lock once nothing here has it: no tab, not on the canvas, not pinned. */
   const letGoIfUnused = useCallback(
     (projectId: string) => {
-      if (pinnedLocksRef.current.has(projectId) || loadedProjectIdRef.current === projectId || hasTab(projectId)) return;
+      if (projectSaves.hasPending(projectId) || pinnedLocksRef.current.has(projectId) || loadedProjectIdRef.current === projectId || hasTab(projectId)) return;
       releaseProjectLock(projectId);
     },
-    [hasTab]
+    [hasTab, projectSaves]
   );
   /** Done with a pinned lock. Let go of it too when nothing here has the project. */
   const settleLock = (projectId: string) => {
@@ -1585,7 +1608,7 @@ export function OpenScreenshotGeneratorLayout() {
     canvasSerialRef.current += 1;
     // One whose tab closed while this one was read kept its lock only for being
     // on the canvas. It lets go once those last edits are written.
-    if (outgoing && outgoing !== projectId) void written.then(() => letGoIfUnused(outgoing));
+    if (outgoing && outgoing !== projectId) void written.then(() => letGoIfUnused(outgoing)).catch(() => {});
   }, [projectSaves, projectTabsParking, letGoIfUnused]);
   // The document this render's artboards are, read once per render. Every
   // commit path and the design-tool api check it with canvasStillHolds before
@@ -2082,7 +2105,7 @@ export function OpenScreenshotGeneratorLayout() {
   // Only armed once there is something on the canvas, so the template picker
   // on a fresh visit never blocks a close.
   useEffect(() => {
-    if (isTauri() || artboards.length === 0) return;
+    if (isTauri() || (artboards.length === 0 && localSaveFailures.length === 0)) return;
     const confirmLeave = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       // Legacy browsers need a truthy returnValue to raise the prompt at all.
@@ -2091,7 +2114,7 @@ export function OpenScreenshotGeneratorLayout() {
     };
     window.addEventListener('beforeunload', confirmLeave);
     return () => window.removeEventListener('beforeunload', confirmLeave);
-  }, [artboards.length]);
+  }, [artboards.length, localSaveFailures.length]);
 
   // The macOS shell records when the OS killed and reloaded the editor's web
   // content (memory ceiling, issue #19). Surfacing it turns a silent mystery
@@ -2182,7 +2205,7 @@ export function OpenScreenshotGeneratorLayout() {
       try {
         // Commit any debounced edits of the outgoing project before the
         // switch, so nothing of it is lost or written after we move on.
-        flushProjectSave();
+        await flushProjectSave();
         // One window writes a project (projectLocks.ts), so the lock comes
         // before the read. Held by another window: a second writer would save
         // over that one's edits, so it is asked about instead.
@@ -2415,7 +2438,7 @@ export function OpenScreenshotGeneratorLayout() {
     if (duplicatingProjectId) return;
     setDuplicatingProjectId(project.id);
     try {
-      flushProjectSave();
+      await flushProjectSave();
       // The recent-projects list holds metadata only (issue #19), so a copy of
       // a non-open project reads the full row here, on demand. A missing row
       // must fail loudly: the list entry is a stub, and duplicating it would
@@ -2571,6 +2594,41 @@ export function OpenScreenshotGeneratorLayout() {
   // Assigned in the tab block: the tab session, with the active tab's view,
   // and the agent chat.
   const beforeWindowCloseRef = useRef<() => Promise<unknown>>(() => Promise.resolve());
+  useEffect(() => {
+    if (!isTauri()) return;
+    let disposed = false;
+    let received = false;
+    let unlisten = () => {};
+    const setInstalling = (installing: boolean) => {
+      if (disposed) return;
+      updateInstallingRef.current = installing;
+      appViewRef.current?.toggleAttribute('inert', installing);
+      setIsInstallingUpdate(installing);
+      if (!installing) flushPendingRemote();
+    };
+    const blockInput = (event: Event) => {
+      if (!updateInstallingRef.current) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    const events = ['keydown', 'beforeinput', 'paste', 'drop', 'pointerdown'];
+    events.forEach((event) => window.addEventListener(event, blockInput, true));
+    void (async () => {
+      unlisten = await listenUpdateState((snapshot) => {
+        received = true;
+        setInstalling(snapshot.phase.phase === 'installing');
+      });
+      if (disposed) { unlisten(); return; }
+      const initial = await fetchUpdateState();
+      if (!received && initial) setInstalling(initial.phase.phase === 'installing');
+    })().catch((error) => console.error('Could not follow the update installation', error));
+    return () => {
+      disposed = true;
+      unlisten();
+      events.forEach((event) => window.removeEventListener(event, blockInput, true));
+      appViewRef.current?.removeAttribute('inert');
+    };
+  }, []);
   // Installing an update ends the process without the close hook below ever
   // running, so Rust asks every editor window to write its edits first, and
   // calls the install off when one cannot (src-tauri/src/updater.rs).
@@ -2582,7 +2640,8 @@ export function OpenScreenshotGeneratorLayout() {
       unlisten = await listenUpdateFlush(async (nonce) => {
         let ok = true;
         try {
-          await Promise.all([flushProjectSave(), beforeWindowCloseRef.current()]);
+          await beforeWindowCloseRef.current();
+          await flushProjectSave();
         } catch (error) {
           ok = false;
           console.error('Could not write the edits before the update.', error);
@@ -2600,7 +2659,7 @@ export function OpenScreenshotGeneratorLayout() {
   }, [flushProjectSave]);
   useEffect(() => {
     const flush = () => {
-      void beforeWindowCloseRef.current();
+      void beforeWindowCloseRef.current().catch((error) => console.error('Could not save the session', error));
       return flushProjectSave();
     };
     window.addEventListener('pagehide', flush);
@@ -2610,9 +2669,18 @@ export function OpenScreenshotGeneratorLayout() {
       (async () => {
         try {
           const { getCurrentWindow } = await import('@tauri-apps/api/window');
-          const unlisten = await getCurrentWindow().onCloseRequested(async () => {
-            // Not prevented: the close proceeds after the writes settle.
-            await Promise.all([flushProjectSave(), beforeWindowCloseRef.current()]);
+          const currentWindow = getCurrentWindow();
+          const unlisten = await currentWindow.onCloseRequested(async (event) => {
+            event.preventDefault();
+            if (updateInstallingRef.current) return;
+            try {
+              await beforeWindowCloseRef.current();
+              await flushProjectSave();
+              await currentWindow.destroy();
+            } catch (error) {
+              console.error('The window stays open because its edits could not be saved', error);
+              toast({ title: 'Keep this window open', description: 'Retry the save or export a recovery file before closing.', variant: 'destructive' });
+            }
           });
           if (disposed) unlisten();
           else unlistenClose = unlisten;
@@ -2627,7 +2695,7 @@ export function OpenScreenshotGeneratorLayout() {
       unlistenClose?.();
       flush();
     };
-  }, [flushProjectSave]);
+  }, [flushProjectSave, toast]);
 
   /*
    * Versions: what this project looked like, kept across reloads.
@@ -2722,6 +2790,10 @@ export function OpenScreenshotGeneratorLayout() {
   // True when the commit landed. The refusals below log, record their reason
   // and return false, so a caller that reports success can report this instead.
   const handleArtboardsUpdate = useCallback((updatedArtboards: ArtboardState[], change?: HistoryChange): boolean => {
+    if (updateInstallingRef.current) {
+      commitRefusalRef.current = 'updating';
+      return false;
+    }
     // An export has a converted or re-projected list on the canvas. A commit
     // arriving now (an MCP tool, a drag settling on mouseup) would be measured
     // against that temporary render and persist it as the project.
@@ -2834,7 +2906,7 @@ export function OpenScreenshotGeneratorLayout() {
    * refused commit would leave both saying the edit happened.
    */
   const canvasTakesCommits = useCallback(
-    () => !isExportingRef.current && canvasStillHolds(renderedCanvas, canvasSerialRef.current),
+    () => !updateInstallingRef.current && !isExportingRef.current && canvasStillHolds(renderedCanvas, canvasSerialRef.current),
     [renderedCanvas]
   );
 
@@ -2857,7 +2929,7 @@ export function OpenScreenshotGeneratorLayout() {
   const applyRemoteArtboards = useCallback(
     (incoming: ArtboardState[], remoteName: string | null) => {
       if (!incoming.length) return;
-      if (isExportingRef.current) {
+      if (isExportingRef.current || updateInstallingRef.current) {
         // The canvas is holding a converted list for the exporter. Keep the
         // newest room state and apply it the moment the run finishes.
         pendingRemoteRef.current = { boards: incoming, name: remoteName };
@@ -2977,7 +3049,7 @@ export function OpenScreenshotGeneratorLayout() {
       if (!canOpenAsProject(restored.boards)) {
         throw new Error('That version has no artboards, so there is nothing to open.');
       }
-      flushProjectSave();
+      await flushProjectSave();
       const copyId = `project_${Date.now()}`;
       const name = `${restored.projectName} (${version.label})`;
       await db.projects.put({
@@ -3376,8 +3448,9 @@ export function OpenScreenshotGeneratorLayout() {
     );
     if (!landed) {
       toastUnsavedResult('The languages were not saved');
-      return;
+      return false;
     }
+    await flushProjectSave();
     if (missed) {
       // The engine's own reason says what to do (sign in, wait, type them in),
       // so the table's button is only offered when there is none.
@@ -3399,7 +3472,8 @@ export function OpenScreenshotGeneratorLayout() {
     if (viewing && !next.locales.some((entry) => entry.code === viewing)) {
       handleSelectLocale(null);
     }
-  }, [handleArtboardsUpdate, handleSelectLocale, showTranslateProgress, toast, toastUnsavedResult]);
+    return true;
+  }, [flushProjectSave, handleArtboardsUpdate, handleSelectLocale, showTranslateProgress, toast, toastUnsavedResult]);
 
   const handleOpenTranslations = useCallback((filter: 'all' | 'untranslated' = 'all') => {
     setTranslationTableLocale(activeLocaleRef.current);
@@ -4106,7 +4180,7 @@ export function OpenScreenshotGeneratorLayout() {
     // Update the project in the database. Flush any debounced save first:
     // a pending row still carries the old name and would win the race.
     try {
-      flushProjectSave();
+      await flushProjectSave();
       const project = await db.projects.get(activeProjectId);
       if (project) {
         await db.projects.put({
@@ -5005,58 +5079,52 @@ export function OpenScreenshotGeneratorLayout() {
     };
   };
 
-  // Export project as JSON
-  const handleExportProjectAsJSON = async () => {
-    if (!activeProjectId) {
-      toast({
-        title: "No Active Project",
-        description: "Please save your project first before exporting.",
-        variant: "destructive",
-      });
-      return;
-    }
-
+  const exportProjectSnapshot = async (save: ProjectSave, recovery = false) => {
     try {
-      // Fetch the current project from IndexedDB. The debounced save may still
-      // hold the last edits; flush so the export never omits them.
-      flushProjectSave();
-      const project = await db.projects.get(activeProjectId);
-      
-      if (!project) {
-        toast({
-          title: "Project Not Found",
-          description: "Could not find the active project in the database.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // Bundle the row together with the binaries it references: media blobs,
-      // and any imported font its text uses. Exporting the row alone (what this
-      // used to do) left video elements dead and headlines in a fallback face
-      // on any other machine, since both live in separate Dexie tables.
+      // Export the captured document even when the local project row cannot be written.
+      const project: Project = { id: save.id, name: save.name, timestamp: new Date(), projectData: JSON.parse(JSON.stringify(save.artboards)) };
       const bundle = await serializeProject(project);
       const jsonString = await bundleToJson(bundle);
       const blob = new Blob([jsonString], { type: 'application/json' });
-      // Desktop-safe save: native dialog in Tauri, anchor download on the web
-      const savedPath = await saveBlobToDisk(blob, `artboard-project-${project.id}.json`);
+      const savedPath = await saveBlobToDisk(blob, `artboard-project-${project.id}${recovery ? '-recovery' : ''}.json`);
       if (savedPath === null) return; // user cancelled the save dialog
 
       trackExportJson();
 
       toast({
         title: "Project Exported",
-        description: savedPath ? `Saved to ${savedPath}` : "Project has been exported as JSON file from database.",
+        description: savedPath ? `Saved to ${savedPath}` : "Saved the current project as a portable JSON file.",
         variant: "default",
       });
     } catch (error) {
       console.error("Error exporting project:", error);
       toast({
         title: "Export Failed",
-        description: "There was an error exporting the project from database.",
+        description: "Keep this window open and try exporting the recovery file again.",
         variant: "destructive",
       });
     }
+  };
+
+  const handleExportProjectAsJSON = async () => {
+    const id = loadedProjectIdRef.current;
+    if (!id) return;
+    await exportProjectSnapshot({ id, name: projectNameRef.current, artboards: artboardsRef.current });
+  };
+
+  const retryLocalSave = async (projectId: string) => {
+    try {
+      await projectSaves.retry(projectId);
+      letGoIfUnused(projectId);
+    } catch (error) {
+      console.error('The local project is still waiting to be saved', error);
+      toast({ title: 'The project is still unsaved', description: 'Free some space, then retry or export a recovery file.', variant: 'destructive' });
+    }
+  };
+
+  const exportLocalRecovery = async (projectId: string) => {
+    const save = projectSaves.getPending(projectId);
+    if (save) await exportProjectSnapshot(save, true);
   };
 
   // --- cloud account (Bring-Your-Own-Storage) -------------------------------
@@ -5097,7 +5165,7 @@ export function OpenScreenshotGeneratorLayout() {
     setIsSavingToAccount(true);
     try {
       // saveProjectToAccount reads the stored row; commit pending edits first.
-      flushProjectSave();
+      await flushProjectSave();
       const saved = await saveProjectToAccount(activeProjectId, {
         saveAsCopy: copyName ? { id: newCloudProjectId(), name: copyName } : undefined,
       });
@@ -5325,12 +5393,12 @@ export function OpenScreenshotGeneratorLayout() {
     setIsSavingToCloud(true);
     try {
       // saveProjectToCloud reads the stored row; commit pending edits first.
-      flushProjectSave();
-      const { project, failedAssets } = await saveProjectToCloud(activeProjectId, { force });
+      await flushProjectSave();
+      const { project, failedAssets } = await saveProjectToCloud(activeProjectId, { force, origin: 'manual' });
       setCloudConflict(null);
       // This push covers everything the automatic one was waiting to send, and
       // an overwrite here is also the answer to whatever it was paused on.
-      cloudAutoSave.noteSaved();
+      cloudAutoSave.noteSaved(activeProjectId);
       await refreshCloudLink();
       toast({
         title: failedAssets.length ? 'Saved, with files still to upload' : 'Saved to the cloud',
@@ -5400,9 +5468,9 @@ export function OpenScreenshotGeneratorLayout() {
     setIsSavingToCloud(true);
     try {
       // saveProjectToCloud reads the stored row; commit pending edits first.
-      flushProjectSave();
-      const saved = await saveProjectToCloud(activeProjectId, { force: !!existing });
-      cloudAutoSave.noteSaved();
+      await flushProjectSave();
+      const saved = await saveProjectToCloud(activeProjectId, { force: !!existing, origin: 'manual' });
+      cloudAutoSave.noteSaved(activeProjectId);
       const result = await setCloudProjectShared(saved.project.id, activeProjectId, true);
       await refreshCloudLink();
       await copyShareUrl(result.url);
@@ -5477,12 +5545,12 @@ export function OpenScreenshotGeneratorLayout() {
     setIsCollabWorking(true);
     try {
       // The push reads the stored row, exactly as every other cloud path does.
-      flushProjectSave();
+      await flushProjectSave();
       const accountId = discoverSession?.viewer?.id ?? null;
       let link = await getCloudLink(activeProjectId, accountId);
       if (!link) {
-        await saveProjectToCloud(activeProjectId);
-        cloudAutoSave.noteSaved();
+        await saveProjectToCloud(activeProjectId, { origin: 'manual' });
+        cloudAutoSave.noteSaved(activeProjectId);
         link = await getCloudLink(activeProjectId, accountId);
       }
       if (!link) throw new Error('This project could not be saved to the cloud.');
@@ -6644,6 +6712,7 @@ export function OpenScreenshotGeneratorLayout() {
    * not resurrect the work that was just stepped away from.
    */
   const applyHistoryIndex = useCallback((targetIndex: number) => {
+    if (updateInstallingRef.current) return;
     if (targetIndex < 0 || targetIndex >= history.length || targetIndex === historyIndex) return;
     // The stack holds states of the document this render shows. While another
     // project opens, stepping through it would put the outgoing project back
@@ -6851,7 +6920,10 @@ export function OpenScreenshotGeneratorLayout() {
   };
 
   const closeTabNow = (projectId: string) => {
+    void (async () => {
     const kept = keepUndoOfClosingTab(projectId);
+    await kept;
+    await projectSaves.retry(projectId);
     // Still being read, it is not wanted on the canvas any more.
     if (projectId !== loadedProjectIdRef.current) void stopOpening(projectId, 'closed');
     if (projectId !== activeProjectIdRef.current) {
@@ -6863,10 +6935,14 @@ export function OpenScreenshotGeneratorLayout() {
     else if (isSecondaryWindow) {
       // The last tab of a window a tab was moved into: the window goes with it.
       projectTabs.close(projectId);
-      void Promise.all([flushProjectSave(), kept]).then(() => closeThisWindow());
+      await closeThisWindow();
       return;
     } else clearCanvasForNoTabs();
     projectTabs.close(projectId);
+    })().catch((error) => {
+      console.error('The tab stays open because its edits could not be saved', error);
+      toast({ title: 'The tab stays open', description: 'Retry the save or export a recovery file before closing.', variant: 'destructive' });
+    });
   };
 
   /**
@@ -6926,9 +7002,12 @@ export function OpenScreenshotGeneratorLayout() {
    * active tab closes, or always with `focusKept` (Close other tabs).
    */
   const closeTabsNow = (doomed: string[], keepId: string, focusKept: boolean) => {
+    void (async () => {
     const closing = doomed.filter((id) => id !== keepId && projectTabs.has(id));
     if (closing.length === 0) return;
     const kept = closing.map((id) => keepUndoOfClosingTab(id));
+    await Promise.all(kept);
+    await flushProjectSave();
     const active = activeProjectIdRef.current;
     const activeCloses = !!active && closing.includes(active);
     if (projectTabs.has(keepId)) {
@@ -6943,8 +7022,12 @@ export function OpenScreenshotGeneratorLayout() {
     for (const id of closing) projectTabs.close(id);
     // The last tabs of a window a tab was moved into: the window goes with them.
     if (isSecondaryWindow && projectTabs.getTabs().length === 0) {
-      void Promise.all([flushProjectSave(), ...kept]).then(() => closeThisWindow());
+      await closeThisWindow();
     }
+    })().catch((error) => {
+      console.error('The tabs stay open because their edits could not be saved', error);
+      toast({ title: 'The tabs stay open', description: 'Retry the save or export a recovery file before closing.', variant: 'destructive' });
+    });
   };
 
   const handleCloseOtherTabs = (keepId: string) => {
@@ -7629,57 +7712,49 @@ export function OpenScreenshotGeneratorLayout() {
     setProjectElsewhere({ projectId: error.projectId, name: error.projectName });
 
   /**
-   * A tab leaves this window. The canvas stops taking edits to it at once, and
-   * the lock is let go of only once its project and its undo stack are both
-   * written, so the window it goes to opens it as it was, undo included.
+   * A tab leaves this window only after its project and undo stack are written.
+   * Edits made during a write are drained before the lock changes hands.
    * Resolves when the lock is gone.
    */
   const letTabGo = async (projectId: string) => {
+    await projectSaves.retry(projectId);
     pinLock(projectId);
-    // Opened again here before the lock goes (from Recent projects, a file,
-    // the account), it would find the lock still held and open, and then two
-    // windows would save it. Anything that asks for it from now on is turned
-    // down, the way another window's lock turns it down.
     const handedOver = startHandOver(projectId);
-    // Still being read, it never reaches this canvas now.
-    const opening = stopOpening(projectId);
-    let undo: UndoSnapshot | null = null;
-    const onCanvas = projectId === loadedProjectIdRef.current;
-    if (projectId === activeProjectIdRef.current || onCanvas) {
-      const next = nextActiveAfterClose(projectTabs.getTabs(), projectId, projectId);
-      if (onCanvas) {
-        undo = canvasUndoSnapshot();
-        // Nothing on the canvas is this project's any more: a commit landing
-        // before the next one opens is turned down rather than saved here.
-        loadedProjectIdRef.current = null;
-        canvasSerialRef.current += 1;
-      }
-      // Still opening, the canvas holds the project before it, which stays put
-      // when its tab is the next one, undo history and all.
-      if (next) activateTab(next);
-      else if (!isSecondaryWindow) clearCanvasForNoTabs();
-    } else {
+    let complete = false;
+    const snapshot = (): UndoSnapshot | null => {
+      if (projectId === loadedProjectIdRef.current) return canvasUndoSnapshot();
       const parked = projectTabsParking.peek(projectId);
-      if (parked) undo = undoSnapshotOf(parked);
-    }
-    forgetTab(projectId);
+      return parked ? undoSnapshotOf(parked) : null;
+    };
     try {
-      // A transfer to or from it finishes first, while this window still has
-      // the project, so the window it goes to reads what the transfer wrote.
-      // So does the open it stopped, which holds the lock until it has.
-      await Promise.all([opening, projectWorkDone(projectId)]);
-      await Promise.all([
-        flushProjectSave(),
-        // Asleep, its stack is on disk already and only needs marking as one
-        // the other window may take.
-        undo ? saveUndo(projectId, undo, { handOver: true }) : undoStore.handOver(projectId).catch(() => {}),
-      ]);
+      await Promise.all([stopOpening(projectId), projectWorkDone(projectId)]);
+      for (;;) {
+        const before = snapshot();
+        if (before) await saveUndo(projectId, before, { handOver: true });
+        else await undoStore.handOver(projectId);
+        await projectSaves.retry(projectId);
+        const after = snapshot();
+        if (before?.history === after?.history && before?.historyIndex === after?.historyIndex &&
+            before?.selectedElementIds === after?.selectedElementIds && before?.unedited === after?.unedited) break;
+      }
+      // No tab or canvas is removed until the document and its history are durable.
+      const onCanvas = projectId === loadedProjectIdRef.current;
+      if (projectId === activeProjectIdRef.current || onCanvas) {
+        const next = nextActiveAfterClose(projectTabs.getTabs(), projectId, projectId);
+        if (onCanvas) {
+          loadedProjectIdRef.current = null;
+          canvasSerialRef.current += 1;
+        }
+        if (next) activateTab(next);
+        else if (!isSecondaryWindow) clearCanvasForNoTabs();
+      }
+      forgetTab(projectId);
+      complete = true;
     } finally {
+      handedOver(complete);
       settleLock(projectId);
-      handedOver();
     }
-    // A window a tab was moved into closes once its last tab has gone.
-    if (isSecondaryWindow && projectTabs.getTabs().length === 0) void closeThisWindow();
+    if (isSecondaryWindow && projectTabs.getTabs().length === 0) await closeThisWindow();
   };
 
   /**
@@ -7699,9 +7774,8 @@ export function OpenScreenshotGeneratorLayout() {
       // The window opens straight away (a browser only allows a popup inside
       // the gesture) and waits for this one to write the tab and let go.
       const leaving = letTabGo(projectId);
-      void openTabWindow(projectId, name, placement).then(async (opened) => {
+      void Promise.all([openTabWindow(projectId, name, placement), leaving]).then(([opened]) => {
         if (opened) return;
-        await leaving;
         takeTabBack(projectId);
         toast({
           title: 'That window could not be opened',
@@ -7710,7 +7784,7 @@ export function OpenScreenshotGeneratorLayout() {
             : 'Your browser blocked the pop-up. Allow pop-ups for this site, then try again.',
           variant: 'destructive',
         });
-      });
+      }).catch(reportMoveFailure);
     };
     if (projectId === activeProjectIdRef.current) confirmLeavingSession(null, 'Leave and move', go);
     else go();
@@ -7719,13 +7793,17 @@ export function OpenScreenshotGeneratorLayout() {
   const tabBusRef = useRef<WindowBus<TabWindowMessage> | null>(null);
   const [otherWindows, setOtherWindows] = useState<OtherTabWindow[]>([]);
   const handOverWaitersRef = useRef(new Map<string, () => void>());
+  const reportMoveFailure = (error: unknown) => {
+    console.error('The project could not be moved to another window', error);
+    toast({ title: 'The project stayed in this window', description: 'Retry the save or export a recovery file before moving the project.', variant: 'destructive' });
+  };
 
   const moveTabToWindow = (projectId: string, windowId: string) => {
     const name = projectNameOf(projectId);
     const go = () => {
       void letTabGo(projectId).then(() =>
         tabBusRef.current?.post({ type: 'adopt', from: EDITOR_WINDOW_ID, to: windowId, projectId, name })
-      );
+      ).catch(reportMoveFailure);
     };
     if (projectId === activeProjectIdRef.current) confirmLeavingSession(null, 'Leave and move', go);
     else go();
@@ -7793,10 +7871,10 @@ export function OpenScreenshotGeneratorLayout() {
             projectId: message.projectId,
             requestId: message.requestId,
           });
-        if (projectTabs.has(message.projectId)) void letTabGo(message.projectId).then(answer);
+        if (projectTabs.has(message.projectId)) void letTabGo(message.projectId).then(answer).catch(reportMoveFailure);
         // Its tab closed while a transfer still holds it: the lock goes once
         // the transfer is done.
-        else if (projectWorkRef.current.has(message.projectId)) void projectWorkDone(message.projectId).then(answer);
+        else if (projectWorkRef.current.has(message.projectId)) void projectWorkDone(message.projectId).then(answer).catch(reportMoveFailure);
         return;
       }
       case 'handed-over':
@@ -9748,7 +9826,7 @@ export function OpenScreenshotGeneratorLayout() {
   ) => {
     try {
       // The outgoing project may still have a debounced save pending.
-      flushProjectSave();
+      await flushProjectSave();
       
       // Apply proper positioning to the artboards. externalizeInlineMedia keeps
       // inline base64 media out of the in-memory state this seeds (issue #19);
@@ -10916,6 +10994,7 @@ const generateRandomProjectName = (): string => {
   // assertion and silently drop the commit. Only the two read tools project,
   // and only when the caller asks for a language.
   const mcpApi: McpDesignApi = {
+    get mutationBlockReason() { return updateInstallingRef.current ? TOOL_COMMIT_REFUSALS.updating : null; },
     listArtboards: (locale) =>
       // projectArtboards returns `artboards` BY REFERENCE for null, so the
       // no-locale path is byte-for-byte what it always did.
@@ -11670,7 +11749,7 @@ const generateRandomProjectName = (): string => {
       }
       // Reopening the already-open project must not resurrect a pre-edit row:
       // commit any pending debounced save before the read.
-      flushProjectSave();
+      await flushProjectSave();
       const project = await db.projects.get(projectId);
       if (!project || !project.projectData) return null;
       if (!canOpenAsProject(project.projectData)) {
@@ -11970,10 +12049,15 @@ const generateRandomProjectName = (): string => {
   return (
     <>
       {templateSelectorDialog}
+      {isInstallingUpdate && (
+        <div role="status" className="fixed inset-0 z-[100] flex items-center justify-center bg-background/95 p-6 text-center">
+          <div><p className="font-semibold">Installing the update</p><p className="mt-2 text-sm text-muted-foreground">Editing will resume if the update cannot be installed.</p></div>
+        </div>
+      )}
       {/* The activity bar, then the editor, then any other view drawn over
           it. The editor stays mounted, inert while another view is in
           front. Phones get no bar: the editor is all a phone can use. */}
-      <div className="flex min-h-svh w-full">
+      <div ref={appViewRef} className="flex min-h-svh w-full">
       <ActivityBar
         active={activity}
         onSelect={selectActivity}
@@ -12258,6 +12342,8 @@ const generateRandomProjectName = (): string => {
             className="sticky top-0 z-50 bg-card border-b"
           />
 
+          <LocalSaveRecovery failures={localSaveFailures} onRetry={retryLocalSave} onExport={exportLocalRecovery} />
+
           <LocalFontNotice
             families={importedFontsInProject}
             projectId={activeProjectId}
@@ -12340,61 +12426,32 @@ const generateRandomProjectName = (): string => {
                 onChange={handleSoundFileChosen}
               />
 
-              {/* Floating bar (bottom-left of canvas): the project name, which
-                  used to sit in the top toolbar. Dropped on phones, where the
-                  bottom row has only enough width for the tools and the zoom
-                  pill; renaming stays available from the project list. */}
-              <div className="absolute bottom-4 left-4 z-40 hidden items-center gap-2 md:flex">
+              <div ref={canvasControlsRef} data-canvas-controls className="absolute inset-x-3 bottom-3 z-40 flex flex-wrap items-center justify-between gap-2">
+              <div className="hidden min-w-0 max-w-[220px] items-center gap-2 md:flex">
                 <ProjectNameField
                   currentProjectName={currentProjectName}
                   onRenameProject={handleRenameProject}
                   className="rounded-full border border-border bg-card/95 px-2 py-1 shadow-lg backdrop-blur"
-                  // Inside the name's own pill, at the end of it: where the
-                  // project is saved is a fact about the project. Renders
-                  // nothing at all with no backend, or with auto save off.
-                  trailing={
-                    activeProjectId ? (
-                      <>
-                        <CloudAutoSaveChip
-                          status={cloudAutoSave.status}
-                          onSignIn={() =>
-                            requireCloudSignIn('Sign in and this project is kept in your cloud on its own.')
-                          }
-                          onSaveNow={cloudAutoSave.saveNow}
-                          onResolveConflict={(remote) => setCloudConflict(remote)}
-                        />
-                        {/* The second destination. Renders nothing at all until
-                            somebody turns syncing on AND has saved this project
-                            to their own storage, which is most of the time. */}
-                        <AccountSyncChip
-                          status={accountSync.status}
-                          onConnect={() =>
-                            openAccountDialog(
-                              'Connect your storage again to keep this project up to date there.',
-                              'storage'
-                            )
-                          }
-                          onSyncNow={accountSync.syncNow}
-                          onResolveConflict={(remote) => {
-                            setConflictFromSync(true);
-                            setSaveConflict(remote);
-                          }}
-                        />
-                      </>
-                    ) : undefined
-                  }
                 />
               </div>
+              {activeProjectId && (
+                <div data-project-sync-status className="flex max-w-full flex-wrap items-center gap-2 empty:hidden">
+                  <CloudAutoSaveChip
+                    status={cloudAutoSave.status}
+                    onSignIn={() => requireCloudSignIn('Sign in to reach the projects you saved to your cloud.')}
+                    onSaveNow={cloudAutoSave.saveNow}
+                    onResolveConflict={(remote) => setCloudConflict(remote)}
+                  />
+                  <AccountSyncChip
+                    status={accountSync.status}
+                    onConnect={() => openAccountDialog('Connect your storage again to keep this project up to date there.', 'storage')}
+                    onSyncNow={accountSync.syncNow}
+                    onResolveConflict={(remote) => { setConflictFromSync(true); setSaveConflict(remote); }}
+                  />
+                </div>
+              )}
 
-              {/* Floating bar (bottom center of canvas): the select and pan
-                  tools, then undo/redo, moved down from the top toolbar so they
-                  sit with the canvas they act on. Undo and redo are two plain
-                  buttons here rather than the dropdown they used to share:
-                  the pill has the room, and one click beats two. */}
-              {/* Centred on a desktop canvas; pushed to the left edge on a
-                  phone so it and the zoom pill share the bottom row instead of
-                  sitting on top of each other. */}
-              <div className="absolute bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card/95 px-2 py-1 shadow-lg backdrop-blur max-md:left-3 max-md:translate-x-0">
+              <div data-canvas-tools className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-card/95 px-2 py-1 shadow-lg backdrop-blur">
                 <Button
                   variant={activeTool === 'select' ? 'secondary' : 'ghost'}
                   size="icon"
@@ -12438,11 +12495,7 @@ const generateRandomProjectName = (): string => {
                 </Button>
               </div>
 
-              {/* MCP server status (desktop only; renders nothing on the web) */}
-              {/* Floating bar (bottom-RIGHT of canvas): the zoom control, with
-                  the MCP status beside it rather than stacked on top of it,
-                  since that corner was already taken. */}
-              <div className="absolute bottom-4 right-4 z-40 flex items-center gap-2">
+              <div data-canvas-zoom className="ml-auto flex shrink-0 items-center gap-2">
                 <div className="flex items-center gap-1 rounded-full border border-border bg-card/95 px-2 py-1 shadow-lg backdrop-blur">
                   <Button
                     variant="ghost"
@@ -12481,6 +12534,7 @@ const generateRandomProjectName = (): string => {
                       this component owns the connection, so it needs it too. */}
                   <McpServerStatus getApi={() => mcpApiRef.current} />
                 </div>
+              </div>
               </div>
 
               {contextMenu && (
@@ -12961,7 +13015,15 @@ const generateRandomProjectName = (): string => {
             }}
             artboards={artboards}
             translationAvailable={translationAvailable}
-            onApply={(next, opts) => void handleApplyLanguages(next, opts)}
+            onApply={async (next, opts) => {
+              try {
+                return await handleApplyLanguages(next, opts);
+              } catch (error) {
+                console.error('Could not save the project languages', error);
+                toast({ title: 'The languages were not saved', description: error instanceof Error ? error.message : 'Keep this window open and try again.', variant: 'destructive' });
+                return false;
+              }
+            }}
             preselect={languagePreselect}
           />
 

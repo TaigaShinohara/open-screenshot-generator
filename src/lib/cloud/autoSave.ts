@@ -1,51 +1,9 @@
-// Keeping the open project in the cloud without anybody clicking Save.
-//
-// ## What this is, and what it is not
-//
-// IndexedDB is still the source of truth, exactly as before. This is a backup
-// that TRAILS the local copy by a threshold, not a mirror kept in lockstep and
-// not a two way sync: nothing here ever pulls, merges or rewrites the local
-// project. It only pushes, through `saveProjectToCloud`, which is the same door
-// the Save button uses.
-//
-// ## Why the cadence is what it is
-//
-// A push re-uploads the whole document (the blobs are skipped when the box
-// already has them, see index.ts), so the cost of being too eager is real
-// bandwidth on somebody's connection and real disk on ours. And a commit can
-// arrive per pixel of a slider drag. So five numbers:
-//
-//   QUIET_MS       the edits have to go quiet for this long before a push. Five
-//                  seconds is short enough to feel immediate and long enough
-//                  that a drag, which commits per pixel, is still one push
-//   MAX_DEFER_MS   but continuous editing still pushes this often
-//   MIN_GAP_MS     never two pushes closer together than this, whatever happens
-//   FIRST_PUSH_MS  a project with no cloud copy yet gets one this long after it
-//                  opens, untouched. It is the one number that is not about
-//                  speed: an account holds 30 projects, so clicking through a
-//                  gallery must not fill it
-//   BACKOFF_MS     what a failed push waits, growing, so a box that is down is
-//                  asked once every ten minutes rather than twice a minute
-//
-// ## The failures, which are most of this file
-//
-// Auto save is only worth having if it is quiet when it works and honest when it
-// does not, and it must NEVER resolve a disagreement on the user's behalf:
-//
-//   - a conflict (another device saved this project since this one last did)
-//     pauses everything and hands the remote row to the UI. `force` is never
-//     passed from here. Only a person answering the conflict dialog can overwrite
-//   - a refusal that retrying cannot fix (the account is at its project limit,
-//     the document is over the size ceiling) pauses too, carrying the server's
-//     own sentence so the chip can say what is wrong
-//   - anything transient (offline, a 5xx, a timeout) backs off and keeps trying
-//   - an expired session drops to "signed out", which is a state and not an error
-//
-// The status object is what the chip in the corner of the canvas renders, and it
-// is the only thing this module tells the UI.
+// Automatic updates require the Settings switch and a project-specific consent
+// recorded by a manual cloud save or by opening the owner's cloud copy.
+// IndexedDB remains the working copy; this saver only pushes and never merges.
 
-import { getCloudLink } from './links';
-import { CloudConflictError, saveProjectToCloud } from './index';
+import { getCloudLink, hasCloudAutoSaveConsent } from './links';
+import { CloudAutoSaveConsentRequiredError, CloudConflictError, saveProjectToCloud } from './index';
 import {
   CloudDisabledError,
   CloudRequestError,
@@ -56,7 +14,6 @@ import {
 const QUIET_MS = 5_000;
 const MAX_DEFER_MS = 30_000;
 const MIN_GAP_MS = 8_000;
-const FIRST_PUSH_MS = 10_000;
 const BACKOFF_MS = [30_000, 60_000, 120_000, 300_000, 600_000];
 /** Offline is not a failure worth backing off over, it is a wait. */
 const OFFLINE_RETRY_MS = 20_000;
@@ -66,6 +23,8 @@ export type CloudAutoSaveState =
   | 'disabled'
   /** There is nobody to attribute a save to. */
   | 'signed-out'
+  /** This project has no permission for automatic cloud updates. */
+  | 'unlinked'
   /** Armed, with nothing that needs pushing yet. */
   | 'waiting'
   /** Edits are waiting for the threshold. */
@@ -159,8 +118,8 @@ export class CloudAutoSaver {
   private inFlight = false;
   /** Stopped until a person acts. Only `saveNow` clears it. */
   private paused = false;
+  private pausedStatus: Pick<CloudAutoSaveStatus, 'message' | 'conflict'> | null = null;
 
-  private armedAt = 0;
   private dirty = false;
   /** The first unsaved change since the last push, for the MAX_DEFER ceiling. */
   private dirtySince = 0;
@@ -231,7 +190,7 @@ export class CloudAutoSaver {
     // the first will notice this change when it finishes, the second is already
     // counting, and the third is waiting for a person.
     if (!this.paused && this.status.state !== 'saving' && this.status.state !== 'retrying') {
-      this.setStatus({ state: 'pending' });
+      this.setStatus({ state: this.resolveIdleState('pending') });
     }
     this.reschedule();
   }
@@ -239,32 +198,18 @@ export class CloudAutoSaver {
   /**
    * Somebody saved this project by hand, or resolved a conflict.
    *
-   * The manual path writes the same row through the same function, so the only
-   * thing left to do here is stop counting this as unsaved and start the gap
-   * again. Without it the auto saver would push a duplicate of what the user
-   * just uploaded, seconds later.
+   * Read the stored consent, revision and remaining uploads. The project id
+   * keeps a save that finished after a switch from arming the next project.
    */
-  noteSaved(): void {
-    this.lastPushAt = Date.now();
-    this.dirty = false;
-    this.failures = 0;
-    this.retryAt = 0;
-    this.paused = false;
-    this.hasCloudCopy = true;
-    this.linkChecked = true;
-    this.setStatus({
-      state: 'saved',
-      savedAt: this.lastPushAt,
-      message: null,
-      conflict: null,
-      pendingAssets: 0,
-    });
-    this.reschedule();
+  noteSaved(projectId: string): void {
+    if (projectId !== this.config.projectId) return;
+    this.arm(true);
   }
 
   /** The chip's retry: clears a pause or a backoff and pushes right now. */
   saveNow(): void {
     this.paused = false;
+    this.pausedStatus = null;
     this.failures = 0;
     this.retryAt = 0;
     void this.push('manual');
@@ -319,6 +264,7 @@ export class CloudAutoSaver {
     const { projectId, available, signedIn, enabled } = this.config;
     if (!projectId || !available || !signedIn || !enabled) return null;
     if (this.paused || this.inFlight) return null;
+    if (!this.linkChecked || !this.hasCloudCopy) return null;
 
     let due: number;
     if (this.dirty) {
@@ -326,8 +272,6 @@ export class CloudAutoSaver {
       // from the FIRST unsaved one: that is what keeps a long uninterrupted
       // editing session from deferring the push forever.
       due = Math.min(this.lastChangeAt + QUIET_MS, this.dirtySince + MAX_DEFER_MS);
-    } else if (this.linkChecked && !this.hasCloudCopy) {
-      due = this.armedAt + FIRST_PUSH_MS;
     } else {
       return null;
     }
@@ -359,18 +303,22 @@ export class CloudAutoSaver {
    * cloud, when it last got there, and whether the last push left blobs behind.
    * Any of the three changes what happens next, so the first push waits for it.
    */
-  private arm(): void {
+  private arm(keepChanges = false): void {
     this.clearTimer();
     this.paused = false;
-    this.dirty = false;
-    this.dirtySince = 0;
-    this.lastChangeAt = 0;
+    this.pausedStatus = null;
+    // A manual request can finish after another edit. Keeping those edits may
+    // resend the document once, but prevents a newer edit being marked saved.
+    if (!keepChanges) {
+      this.dirty = false;
+      this.dirtySince = 0;
+      this.lastChangeAt = 0;
+    }
     this.lastPushAt = 0;
     this.hasCloudCopy = false;
     this.linkChecked = false;
     this.failures = 0;
     this.retryAt = 0;
-    this.armedAt = Date.now();
     this.setStatus({ ...IDLE_AUTO_SAVE_STATUS, state: this.resolveIdleState() });
 
     const { projectId, accountId } = this.config;
@@ -381,11 +329,11 @@ export class CloudAutoSaver {
       // A project switch during the read makes this answer somebody else's.
       if (token !== this.linkToken) return;
       this.linkChecked = true;
-      if (link) {
+      if (hasCloudAutoSaveConsent(link, accountId)) {
         this.hasCloudCopy = true;
         const savedAt = link.savedAt instanceof Date ? link.savedAt.getTime() : 0;
         this.lastPushAt = savedAt;
-        this.setStatus({ state: this.resolveIdleState('saved'), savedAt: savedAt || null });
+        this.setStatus({ state: this.resolveIdleState(this.dirty ? 'pending' : 'saved'), savedAt: savedAt || null });
         if (link.pendingAssets?.length) {
           // The last push got the document up and lost some of its files. That
           // is unfinished work, so it counts as dirty and the next push carries
@@ -395,15 +343,15 @@ export class CloudAutoSaver {
           this.lastChangeAt = Date.now();
           this.setStatus({ state: this.resolveIdleState('pending'), pendingAssets: link.pendingAssets.length });
         }
+      } else {
+        this.setStatus({ state: this.resolveIdleState() });
       }
       this.reschedule();
     }).catch(() => {
-      // getCloudLink swallows its own failures, so this is only reachable if
-      // IndexedDB itself is gone. Carry on rather than leaving the saver waiting
-      // for an answer that is never coming: an unknown link is the same
-      // situation as no link, and the push checks the server anyway.
+      // An unreadable consent record cannot authorize an automatic update.
       if (token !== this.linkToken) return;
       this.linkChecked = true;
+      this.setStatus({ state: this.resolveIdleState() });
       this.reschedule();
     });
   }
@@ -416,24 +364,33 @@ export class CloudAutoSaver {
    * claiming a project is saved.
    */
   private resolveIdleState(preferred: CloudAutoSaveState = 'waiting'): CloudAutoSaveState {
-    const { available, enabled, signedIn } = this.config;
+    const { available, enabled, signedIn, accountId } = this.config;
     if (!available || !enabled) return 'disabled';
-    if (!signedIn) return 'signed-out';
+    if (!signedIn || !accountId) return 'signed-out';
+    if (!this.linkChecked || !this.hasCloudCopy) return 'unlinked';
     return preferred;
   }
 
   /** Re-read the config into the current state, without re-arming. */
   private settle(): void {
-    const { available, enabled, signedIn } = this.config;
+    const { available, enabled, signedIn, accountId } = this.config;
     if (!available || !enabled) {
       this.setStatus({ state: 'disabled', message: null, conflict: null });
       return;
     }
-    if (!signedIn) {
+    if (!signedIn || !accountId) {
       this.setStatus({ state: 'signed-out', message: null, conflict: null });
       return;
     }
-    if (this.status.state !== 'disabled' && this.status.state !== 'signed-out') return;
+    if (!this.linkChecked || !this.hasCloudCopy) {
+      this.setStatus({ state: 'unlinked', message: null, conflict: null });
+      return;
+    }
+    if (this.paused) {
+      this.setStatus({ state: 'paused', ...this.pausedStatus });
+      return;
+    }
+    if (this.status.state !== 'disabled' && this.status.state !== 'signed-out' && this.status.state !== 'unlinked') return;
     // Just signed in, or just switched on: pick up where the project stands.
     this.setStatus({
       state: this.dirty ? 'pending' : this.status.savedAt ? 'saved' : 'waiting',
@@ -444,12 +401,12 @@ export class CloudAutoSaver {
   // --- the push -------------------------------------------------------------
 
   private async push(reason: PushReason): Promise<void> {
-    const { projectId, available, signedIn, enabled } = this.config;
+    const { projectId, accountId, available, signedIn, enabled } = this.config;
     if (!projectId || !available || !signedIn || !enabled) return;
+    if (!accountId || !this.linkChecked || !this.hasCloudCopy) return;
     if (this.inFlight) return;
     if (this.paused && reason !== 'manual') return;
-    // Nothing to say: no edits since the last push, and the cloud already holds
-    // a copy. A manual retry pushes anyway, because the user asked.
+    // A manual retry can resend an unchanged, authorized project.
     if (!this.dirty && this.hasCloudCopy && reason !== 'manual') return;
 
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -465,12 +422,14 @@ export class CloudAutoSaver {
     // is NOT covered by it, and comparing against this mark is how the next
     // schedule knows that.
     const changeMark = this.lastChangeAt;
+    const token = this.linkToken;
     this.setStatus({ state: 'saving', message: null });
 
     try {
       await this.options.flushLocal();
-      const { failedAssets } = await saveProjectToCloud(projectId);
-      if (this.config.projectId !== projectId) return;
+      if (token !== this.linkToken || !this.config.available || !this.config.enabled || !this.config.signedIn) return;
+      const { failedAssets } = await saveProjectToCloud(projectId, { origin: 'auto' });
+      if (token !== this.linkToken) return;
 
       this.lastPushAt = Date.now();
       this.hasCloudCopy = true;
@@ -496,7 +455,7 @@ export class CloudAutoSaver {
         pendingAssets: failedAssets.length,
       });
     } catch (error) {
-      if (this.config.projectId !== projectId) return;
+      if (token !== this.linkToken) return;
       this.handleFailure(error);
     } finally {
       this.inFlight = false;
@@ -505,6 +464,11 @@ export class CloudAutoSaver {
   }
 
   private handleFailure(error: unknown): void {
+    if (error instanceof CloudAutoSaveConsentRequiredError) {
+      this.hasCloudCopy = false;
+      this.setStatus({ state: this.resolveIdleState(), savedAt: null, message: null, conflict: null, pendingAssets: 0 });
+      return;
+    }
     if (error instanceof CloudConflictError) {
       // Somebody else's copy is newer. Overwriting it is a decision, and this is
       // not the layer that gets to make it.
@@ -565,11 +529,14 @@ export class CloudAutoSaver {
 
   private setStatus(patch: Partial<CloudAutoSaveStatus>): void {
     const next: CloudAutoSaveStatus = { ...this.status, ...patch };
+    if (patch.state === 'paused') this.pausedStatus = { message: next.message, conflict: next.conflict };
     // One invariant, enforced in the one place every state change passes
     // through: with the feature off there is nothing to report, so a push that
     // was already in the air when it was switched off cannot land the chip back
     // on screen saying "Saved".
     if (!this.config.available || !this.config.enabled) next.state = 'disabled';
+    else if (!this.config.signedIn || !this.config.accountId) next.state = 'signed-out';
+    else if (!this.linkChecked || !this.hasCloudCopy) next.state = 'unlinked';
     const current = this.status;
     if (
       next.state === current.state &&

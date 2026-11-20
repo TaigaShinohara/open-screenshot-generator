@@ -27,6 +27,7 @@ import { dim, emit, humanBytes, info, ok, step, warn } from '../log.js';
 import { ensureDir } from '../paths.js';
 import { readMp4File } from '../verify/mp4.js';
 import { readPngFile } from '../verify/png.js';
+import { localeOf } from '../verify/locales.js';
 import {
   checkMp4,
   checkPng,
@@ -106,12 +107,6 @@ function kindOf(file: string): ManifestFile['kind'] {
   if (ext === '.png') return 'png';
   if (ext === '.mp4' || ext === '.mov') return 'mp4';
   return 'other';
-}
-
-/** Only ever the token the export itself writes: "<locale>_01_Board_....png". */
-function localeOf(file: string, locales: string[]): string | null {
-  const name = path.basename(file);
-  return locales.find((code) => name.startsWith(`${code}_`)) ?? null;
 }
 
 function boardOf(file: string, boards: { id: string; name: string }[]): string | null {

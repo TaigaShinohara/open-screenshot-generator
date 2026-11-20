@@ -578,8 +578,10 @@ export function PreviewTimelineBar({
 
   return (
     <div
+      data-preview-timeline
       data-export-exclude
-      className="pointer-events-auto absolute bottom-[4.25rem] left-3 right-3 z-30 max-md:bottom-[4.75rem]"
+      className="pointer-events-auto absolute left-3 right-3 z-30"
+      style={{ bottom: 'calc(var(--canvas-controls-height, 44px) + 1.25rem)' }}
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="relative rounded-xl border border-border bg-card/95 shadow-lg backdrop-blur">

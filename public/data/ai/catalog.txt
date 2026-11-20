@@ -1,4 +1,4 @@
-VERIFICATION-TOKEN: abs-15a606e3
+VERIFICATION-TOKEN: abs-126d1ac9
 Open Screenshot Generator template catalog. Templates are t<n>; within each, device slots are d<k> and text slots are x<k>, numbered across the whole template. Refer to templates and slots ONLY by these refs.
 
 t0 | Sunup Missions | category:screenshots | 6 artboards, 1 device slots | App Store & Play Store screenshots for an alarm clock or wake-up app. Warm glow on near black, heavy two-tone...
@@ -542,6 +542,18 @@ t95 | Crypto Portfolio | category:play-feature-graphic | 1 artboards, 1 device s
   artboard 0 "Crypto Portfolio" devices[d0:android-punch-hole] texts[x0:"Track your crypto, live", x1:"Real-time prices and portfolio insights.", x2:"+12.4% this week"]
 t96 | Productivity Tasks | category:play-feature-graphic | 1 artboards, 1 device slots | Google Play feature graphic (1024x500) for a productivity or to-do app. Clean blue hero with a bolt accent, a...
   artboard 0 "Productivity Tasks" devices[d0:iphone-15] texts[x0:"Get things done, faster", x1:"Tasks, notes and reminders, all in one plac...", x2:"Start free"]
+t97 | Taiga MD3 (Japanese) | category:taiga | 5 artboards, 4 device slots | Material Design 3 based store screenshots for any app, with Japanese headlines and a light surface layout. Ed...
+  artboard 0 "Hero" devices[] texts[x0:"あなたの毎日に、", x1:"ちょうどいいアプリ", x2:"かんたん操作", x3:"すぐに始められる", x4:"毎日使える", x5:"無料で試せる"]
+  artboard 1 "Point 01" devices[d0:iphone-15] texts[x6:"POINT 01", x7:"いちばんの機能を、 シンプルに"]
+  artboard 2 "Point 02" devices[d1:iphone-15] texts[x8:"POINT 02", x9:"迷わず使える、 分かりやすい画面"]
+  artboard 3 "Point 03" devices[d2:iphone-15] texts[x10:"POINT 03", x11:"ひと目で分かる、 あなたの記録", x12:"毎日の変化を、 グラフと数字で 確かめられます。"]
+  artboard 4 "Point 04" devices[d3:iphone-15] texts[x13:"POINT 04", x14:"あなた好みに、 カスタマイズ"]
+t98 | Taiga Glass (Japanese) | category:taiga | 5 artboards, 4 device slots | Simple Glass based store screenshots for any app, with Japanese headlines on a deep navy glass layout. Edit t...
+  artboard 0 "Hero" devices[] texts[x0:"あなたの毎日に、", x1:"ちょうどいいアプリ", x2:"かんたん操作", x3:"すぐに始められる", x4:"毎日使える", x5:"無料で試せる"]
+  artboard 1 "Point 01" devices[d0:iphone-15] texts[x6:"POINT 01", x7:"いちばんの機能を、 シンプルに"]
+  artboard 2 "Point 02" devices[d1:iphone-15] texts[x8:"POINT 02", x9:"迷わず使える、 分かりやすい画面"]
+  artboard 3 "Point 03" devices[d2:iphone-15] texts[x10:"POINT 03", x11:"ひと目で分かる、 あなたの記録", x12:"毎日の変化を、 グラフと数字で 確かめられます。"]
+  artboard 4 "Point 04" devices[d3:iphone-15] texts[x13:"POINT 04", x14:"あなた好みに、 カスタマイズ"]
 
 Template previews (PNG):
 t0 preview: https://editor.openscrgen.app/data/projects/previews/sunup-missions.png
@@ -641,3 +653,5 @@ t93 preview: https://editor.openscrgen.app/data/projects/previews/fg-habit-track
 t94 preview: https://editor.openscrgen.app/data/projects/previews/fg-travel-explore.png
 t95 preview: https://editor.openscrgen.app/data/projects/previews/fg-crypto-portfolio.png
 t96 preview: https://editor.openscrgen.app/data/projects/previews/fg-productivity-tasks.png
+t97 preview: https://editor.openscrgen.app/data/projects/previews/taiga-md3.png
+t98 preview: https://editor.openscrgen.app/data/projects/previews/taiga-glass.png

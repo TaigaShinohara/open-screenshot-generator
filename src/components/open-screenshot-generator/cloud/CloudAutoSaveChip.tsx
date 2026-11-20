@@ -51,6 +51,7 @@ function faceFor(status: CloudAutoSaveStatus): ChipFace | null {
 
   switch (status.state) {
     case 'disabled':
+    case 'unlinked':
       return null;
     case 'signed-out':
       return {
@@ -58,13 +59,13 @@ function faceFor(status: CloudAutoSaveStatus): ChipFace | null {
         label: 'Sign in to sync',
         title:
           status.message ||
-          'Saved in this browser only. Sign in and this project is kept in your cloud too',
+          'Sign in to resume automatic cloud updates for projects you saved there',
       };
     case 'waiting':
       return {
         icon: CloudIcon,
         label: 'Auto save on',
-        title: 'This project goes to your cloud on its own, shortly after you start working',
+        title: "Automatic updates are on for this project's cloud copy",
       };
     case 'pending':
       return {
