@@ -46,7 +46,7 @@ const H264_CODEC_CANDIDATES = [
 const DISK_FAIL_BYTES = 500 * 1024 * 1024;
 const DISK_WARN_BYTES = 2 * 1024 * 1024 * 1024;
 
-const MIN_NODE = [20, 12, 0];
+const MIN_NODE = [22, 12, 0];
 
 /**
  * The in page rows, in order. Kept in one place so a run that could not boot
@@ -200,7 +200,7 @@ export async function run(ctx: CommandContext): Promise<number> {
     label: 'node',
     status: nodeOk ? 'ok' : 'fail',
     detail: `v${node} on ${process.platform} ${process.arch}, ${os.release()}`,
-    fix: nodeOk ? undefined : 'Install Node 20.12 or newer. Older releases lack the fetch and statfs APIs this CLI uses.',
+    fix: nodeOk ? undefined : 'Install Node 22.12 or newer to use the browser tooling',
   });
 
   const browser = findBrowser({ explicit: flagString(ctx.args.flags, 'browser') ?? ctx.config.browser });
