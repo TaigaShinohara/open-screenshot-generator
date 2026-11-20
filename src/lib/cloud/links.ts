@@ -17,6 +17,8 @@
 import { db } from '@/database';
 import type { CloudProject, CloudVisibility } from './types';
 
+export type CloudAutoSaveConsent = 'manual-save' | 'cloud-open';
+
 export interface CloudProjectLink {
   /** The LOCAL project id. Primary key: one cloud copy per local project. */
   projectId: string;
@@ -30,6 +32,8 @@ export interface CloudProjectLink {
    * this and treats a mismatch as "not saved".
    */
   accountId: string;
+  /** The action that allowed this project's cloud copy to receive automatic updates. */
+  autoSaveConsent?: CloudAutoSaveConsent;
   /** When this device last pushed. */
   savedAt: Date;
   /**
@@ -65,6 +69,14 @@ export interface CloudProjectLink {
   collabKey?: string;
 }
 
+export function hasCloudAutoSaveConsent(
+  link: CloudProjectLink | null,
+  accountId: string | null
+): link is CloudProjectLink {
+  return !!accountId && link?.accountId === accountId &&
+    (link.autoSaveConsent === 'manual-save' || link.autoSaveConsent === 'cloud-open');
+}
+
 /** The link for a local project, or null. Never throws. */
 export async function getCloudLink(
   projectId: string,
@@ -98,7 +110,8 @@ export async function putCloudLink(
   projectId: string,
   accountId: string,
   project: CloudProject,
-  pendingAssets: string[]
+  pendingAssets: string[],
+  consent?: CloudAutoSaveConsent
 ): Promise<void> {
   try {
     // The room key is the one field on this row the server knows nothing about,
@@ -106,16 +119,20 @@ export async function putCloudLink(
     // runs every minute, and losing it would silently end a live session's
     // invite link between one edit and the next.
     const existing = await db.cloudLinks.get(projectId);
+    const sameCopy = existing?.accountId === accountId && existing?.recordId === project.id;
+    const autoSaveConsent = consent ??
+      (sameCopy && hasCloudAutoSaveConsent(existing ?? null, accountId) ? existing?.autoSaveConsent : undefined);
     await db.cloudLinks.put({
       projectId,
       recordId: project.id,
       accountId,
+      ...(autoSaveConsent ? { autoSaveConsent } : {}),
       savedAt: new Date(),
       remoteUpdated: project.updated,
       visibility: project.visibility,
       shareSlug: project.shareSlug ?? '',
       pendingAssets,
-      ...(existing?.collabKey ? { collabKey: existing.collabKey } : {}),
+      ...(sameCopy && existing?.collabKey ? { collabKey: existing.collabKey } : {}),
     });
   } catch (error) {
     // A lost hint is not worth failing a save that already succeeded upstream.

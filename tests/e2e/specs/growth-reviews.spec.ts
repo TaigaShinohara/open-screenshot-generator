@@ -378,7 +378,7 @@ test.describe('growth ratings and reviews', () => {
       await alerts.getByRole('button', { name: 'Send a test message' }).click();
       await expect(alerts.getByText('Sent. Look for the message in Slack')).toBeVisible();
       const posted = (await httpRequests(page)).find((request) => request.method === 'POST' && request.url === SLACK);
-      expect(JSON.parse(posted!.body!)).toEqual({ text: `Growth in Open Screenshot Generator will post new reviews of ${TEST_APP.name} here.` });
+      expect(JSON.parse(posted!.body!)).toEqual({ text: `Growth in tiger screen shot will post new reviews of ${TEST_APP.name} here.` });
       await alerts.getByRole('radio', { name: 'Only 1 and 2 star reviews' }).click();
       expect(await page.evaluate(() => JSON.parse(localStorage.getItem('open-screenshot-generator.growth') ?? '{}'))).toMatchObject({ slackWebhook: SLACK, reviewAlerts: 'low' });
     });

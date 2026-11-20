@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
   output: 'export',
   basePath,
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   eslint: {
     ignoreDuringBuilds: true,

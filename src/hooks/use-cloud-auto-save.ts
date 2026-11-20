@@ -51,7 +51,7 @@ export interface CloudAutoSaveHandle {
   /** Safe to call on every commit, including per pixel of a drag. */
   noteChange: (projectId: string | null) => void;
   /** A manual save (or a resolved conflict) already pushed this project. */
-  noteSaved: () => void;
+  noteSaved: (projectId: string) => void;
   /** Push now, clearing a pause or a backoff. What the chip does when clicked. */
   saveNow: () => void;
   /** The user's own switch, for the copy that explains why nothing is syncing. */
@@ -98,7 +98,7 @@ export function useCloudAutoSave({
   }, [saver, projectId, accountId, available, signedIn, enabled, openToken]);
 
   const noteChange = useCallback((id: string | null) => saver.noteChange(id), [saver]);
-  const noteSaved = useCallback(() => saver.noteSaved(), [saver]);
+  const noteSaved = useCallback((id: string) => saver.noteSaved(id), [saver]);
   const saveNow = useCallback(() => saver.saveNow(), [saver]);
 
   return { status, noteChange, noteSaved, saveNow, enabled };

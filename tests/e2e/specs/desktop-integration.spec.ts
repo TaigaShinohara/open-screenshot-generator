@@ -19,12 +19,12 @@ import { Editor } from '../helpers/editor';
  * never heard of.
  */
 
-const REPO_URL = 'https://github.com/dotnetdreamer/open-screenshot-generator';
-const DESKTOP_DOWNLOAD_URL = 'https://openscrgen.app';
+const REPO_URL = 'https://github.com/TaigaShinohara/open-screenshot-generator';
+const DESKTOP_DOWNLOAD_URL = 'https://github.com/TaigaShinohara/open-screenshot-generator/releases';
 const APP_STORE_KEY_URL = 'https://appstoreconnect.apple.com/access/integrations/api';
 
 /** The toolbar's source link. It is an anchor, not a button, on both platforms. */
-const GITHUB_LINK_TITLE = 'Open Screenshot Generator on GitHub, star it or report an issue';
+const GITHUB_LINK_TITLE = 'tiger screen shot on GitHub, star it or report an issue';
 
 /**
  * Does this build have a web MCP relay?

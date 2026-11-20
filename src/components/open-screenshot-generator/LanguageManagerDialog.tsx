@@ -53,7 +53,7 @@ export interface LanguageManagerDialogProps {
   onApply: (
     next: ProjectLocalization,
     opts: { machineTranslate: boolean; addedLocales: string[] }
-  ) => void;
+  ) => Promise<boolean>;
   /**
    * Languages to tick on opening, beside the project's own. The Growth window
    * opens the dialog this way with the languages its shoppers read.
@@ -101,6 +101,8 @@ export function LanguageManagerDialog({
   const [selected, setSelected] = useState<string[]>([]);
   const [machineTranslate, setMachineTranslate] = useState(false);
   const [query, setQuery] = useState('');
+  const [applying, setApplying] = useState(false);
+  const applyingRef = useRef(false);
 
   // Latest boards, read only on the closed to open edge. Depending on the prop
   // directly would re-seed mid-session on any unrelated commit (the array is a
@@ -176,7 +178,10 @@ export function LanguageManagerDialog({
   // language to have moved in or out of the list.
   const changed = added.length > 0 || removed.length > 0;
 
-  const handleApply = () => {
+  const handleApply = async () => {
+    if (applyingRef.current) return;
+    applyingRef.current = true;
+    setApplying(true);
     // Kept languages keep their own entry, so autoFont and autoFit survive a
     // trip through this dialog. New ones are stored as a bare code: both flags
     // default to on when absent, and a sparse entry keeps projectData small.
@@ -186,11 +191,15 @@ export function LanguageManagerDialog({
       (def) => selectedCodes.has(def.code) && !keptCodes.has(def.code)
     ).map((def) => ({ code: def.code }));
 
-    onApply(
-      { baseLocale, locales: [...kept, ...fresh] },
-      { machineTranslate: machineTranslate && translationAvailable, addedLocales: added }
-    );
-    onOpenChange(false);
+    try {
+      if (await onApply(
+        { baseLocale, locales: [...kept, ...fresh] },
+        { machineTranslate: machineTranslate && translationAvailable, addedLocales: added }
+      )) onOpenChange(false);
+    } finally {
+      applyingRef.current = false;
+      setApplying(false);
+    }
   };
 
   const applyLabel =
@@ -199,7 +208,7 @@ export function LanguageManagerDialog({
       : 'Save languages';
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => { if (!applyingRef.current) onOpenChange(next); }}>
       {/* Header, base picker, search and footer stay put; only the grid scrolls,
           so the dialog never clips off a short viewport. */}
       <DialogContent className="flex max-h-[92vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
@@ -226,7 +235,7 @@ export function LanguageManagerDialog({
                   : undefined
               }
             >
-              <Select value={baseLocale} onValueChange={handleBaseChange} disabled={baseLocked}>
+              <Select value={baseLocale} onValueChange={handleBaseChange} disabled={baseLocked || applying}>
                 <SelectTrigger id="base-locale" className="h-9 bg-background">
                   <SelectValue />
                 </SelectTrigger>
@@ -244,6 +253,7 @@ export function LanguageManagerDialog({
           <div className="relative">
             <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              disabled={applying}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search languages"
@@ -283,7 +293,7 @@ export function LanguageManagerDialog({
                       id={`locale-${def.code}`}
                       className="mt-0.5"
                       checked={isBase || isSelected}
-                      disabled={isBase}
+                      disabled={isBase || applying}
                       onCheckedChange={() => toggle(def.code)}
                     />
                     <div className="min-w-0 flex-1">
@@ -345,7 +355,7 @@ export function LanguageManagerDialog({
             <Switch
               id="machine-translate"
               checked={machineTranslate && translationAvailable}
-              disabled={!translationAvailable}
+              disabled={!translationAvailable || applying}
               onCheckedChange={setMachineTranslate}
             />
             <div className="min-w-0 flex-1">
@@ -365,9 +375,9 @@ export function LanguageManagerDialog({
 
         <DialogFooter className="shrink-0 gap-2 border-t px-6 py-4">
           <DialogClose asChild>
-            <Button variant="outline">Cancel</Button>
+            <Button variant="outline" disabled={applying}>Cancel</Button>
           </DialogClose>
-          <Button onClick={handleApply} disabled={!changed}>
+          <Button onClick={() => void handleApply()} disabled={!changed || applying} aria-busy={applying}>
             {applyLabel}
           </Button>
         </DialogFooter>

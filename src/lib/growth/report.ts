@@ -360,7 +360,7 @@ export function reportMarkdown(report: PeriodReport, summary?: string | null): s
     out.push(`${report.owner} has not sent the numbers for ${plural(report.missingDays, 'day')} of this period yet.`);
   }
   out.push('');
-  out.push('Made with Open Screenshot Generator.');
+  out.push('Made with tiger screen shot.');
   return out.join('\n');
 }
 

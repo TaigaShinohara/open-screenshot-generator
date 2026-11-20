@@ -32,6 +32,7 @@ import {
   deleteCloudLink,
   deleteCloudLinkByRecord,
   getCloudLink,
+  hasCloudAutoSaveConsent,
   putCloudLink,
   setCloudLinkSharing,
 } from './links';
@@ -40,6 +41,7 @@ import {
   CloudSignInRequiredError,
   type CloudAssetSummary,
   type CloudProject,
+  type CloudSaveResult,
   type CloudVisibility,
 } from './types';
 
@@ -66,6 +68,13 @@ export class CloudConflictError extends Error {
   }
 }
 
+export class CloudAutoSaveConsentRequiredError extends Error {
+  constructor() {
+    super('Save this project to your cloud to allow automatic updates');
+    this.name = 'CloudAutoSaveConsentRequiredError';
+  }
+}
+
 // The document is gzipped on its way up and read back by whichever encoding the
 // record says it was stored in. Shared with the local version history, which
 // stores the same document the same way: see src/lib/compressJson.ts.
@@ -75,6 +84,8 @@ export class CloudConflictError extends Error {
 // ---------------------------------------------------------------------------
 
 export interface SaveToCloudOptions {
+  /** A manual save grants permission; an automatic save requires existing permission. */
+  origin: 'manual' | 'auto';
   onProgress?: ProgressFn;
   /**
    * Push over whatever is up there.
@@ -103,17 +114,22 @@ export interface SaveToCloudResult {
  */
 export async function saveProjectToCloud(
   projectId: string,
-  options: SaveToCloudOptions = {}
+  options: SaveToCloudOptions
 ): Promise<SaveToCloudResult> {
-  const { onProgress, force } = options;
+  const { onProgress, force, origin } = options;
 
   const accountId = cloudApi.accountId();
   if (!accountId) throw new CloudSignInRequiredError();
+  if (origin !== 'manual' && origin !== 'auto') throw new CloudAutoSaveConsentRequiredError();
+  const autoLink = origin === 'auto' ? await getCloudLink(projectId, accountId) : null;
+  if (origin === 'auto' && !hasCloudAutoSaveConsent(autoLink, accountId)) {
+    throw new CloudAutoSaveConsentRequiredError();
+  }
 
   const project = await db.projects.get(projectId);
   if (!project) throw new Error('This project is not in your local library yet.');
 
-  await assertNoUnexpectedRemote(projectId, accountId, force === true);
+  await assertNoUnexpectedRemote(projectId, accountId, origin === 'manual' && force === true, origin === 'auto');
 
   onProgress?.('Packaging project', 0);
   const bundle = await serializeProject(project, onProgress);
@@ -127,7 +143,14 @@ export async function saveProjectToCloud(
   ];
 
   onProgress?.('Saving project', 0.5);
-  const saved = await cloudApi.saveProject({
+  if (cloudApi.accountId() !== accountId) throw new CloudSignInRequiredError();
+  if (origin === 'auto') {
+    const currentLink = await getCloudLink(projectId, accountId);
+    if (!hasCloudAutoSaveConsent(currentLink, accountId) || currentLink.recordId !== autoLink?.recordId) {
+      throw new CloudAutoSaveConsentRequiredError();
+    }
+  }
+  const input = {
     projectId,
     name: project.name || 'Untitled project',
     boards: project.projectData?.length ?? 0,
@@ -135,16 +158,35 @@ export async function saveProjectToCloud(
     doc,
     docEncoding: encoding,
     manifestAssets,
-  });
+    ...(autoLink ? { expectedRecordId: autoLink.recordId, expectedUpdated: autoLink.remoteUpdated } : {}),
+  };
+  if (cloudApi.accountId() !== accountId) throw new CloudSignInRequiredError();
+  let saved: CloudSaveResult;
+  try {
+    saved = await cloudApi.saveProject(input);
+  } catch (error) {
+    if (cloudApi.accountId() !== accountId) throw new CloudSignInRequiredError();
+    if (origin === 'auto' && error instanceof CloudRequestError) {
+      if (error.status === 404) {
+        await deleteCloudLink(projectId);
+        throw new CloudAutoSaveConsentRequiredError();
+      }
+      if (error.status === 409 && autoLink) {
+        const remote = await cloudApi.getProject(autoLink.recordId);
+        if (remote) throw new CloudConflictError(remote);
+        await deleteCloudLink(projectId);
+        throw new CloudAutoSaveConsentRequiredError();
+      }
+    }
+    throw error;
+  }
 
   // Uploading only what the server asked for is the whole reason a re-save of a
   // project with a 90MB recording costs a few hundred kilobytes.
   const failedAssets: string[] = [];
   const wanted = saved.missing;
-  // Each upload restates `asset_bytes` on the project row and so moves its
-  // `updated`. The link has to end up holding the LAST stamp, or the next save
-  // compares against one from before the uploads and reports a conflict with
-  // itself.
+  // Each upload must continue the revision chain started by this document
+  // save. An unrelated document's revision must never become this link's mark.
   let updated = saved.project.updated;
   for (const [index, entry] of wanted.entries()) {
     const source =
@@ -158,24 +200,36 @@ export async function saveProjectToCloud(
     }
     onProgress?.(`Uploading file ${index + 1} of ${wanted.length}`, 0.5 + (0.5 * index) / wanted.length);
     try {
+      if (cloudApi.accountId() !== accountId) throw new CloudSignInRequiredError();
       const stamp = await cloudApi.uploadAsset(saved.project.id, {
+        projectId,
+        expectedUpdated: updated,
         assetId: entry.id,
         kind: entry.kind,
         blob: source.blob,
         meta: source.meta as unknown as Record<string, unknown>,
       });
-      if (stamp) updated = stamp;
+      if (stamp.previousUpdated !== updated || !stamp.updated) {
+        throw new CloudRequestError('The cloud did not confirm which project copy received that file', 409);
+      }
+      updated = stamp.updated;
     } catch (error) {
-      // One failed recording must not cost the save. It is recorded on the link
-      // so the UI can say the copy is partial, and the next save retries it.
+      if (error instanceof CloudSignInRequiredError) throw error;
+      if (error instanceof CloudRequestError && error.status === 409) {
+        if (cloudApi.accountId() !== accountId) throw new CloudSignInRequiredError();
+        const remote = await cloudApi.getProject(saved.project.id);
+        if (remote) throw new CloudConflictError(remote);
+        throw error;
+      }
+      // A non-conflicting file failure leaves a partial save to retry.
       console.error(`Could not upload ${entry.id} to the cloud`, error);
       failedAssets.push(entry.id);
-      if (error instanceof CloudSignInRequiredError) throw error;
     }
   }
 
   const stored: CloudProject = { ...saved.project, updated };
-  await putCloudLink(projectId, accountId, stored, failedAssets);
+  if (cloudApi.accountId() !== accountId) throw new CloudSignInRequiredError();
+  await putCloudLink(projectId, accountId, stored, failedAssets, origin === 'manual' ? 'manual-save' : undefined);
   onProgress?.('Saved', 1);
   return { project: stored, failedAssets };
 }
@@ -196,7 +250,8 @@ export async function saveProjectToCloud(
 async function assertNoUnexpectedRemote(
   projectId: string,
   accountId: string,
-  force: boolean
+  force: boolean,
+  automatic: boolean
 ): Promise<void> {
   if (force) return;
 
@@ -206,21 +261,26 @@ async function assertNoUnexpectedRemote(
     try {
       remote = await cloudApi.getProject(link.recordId);
     } catch (error) {
-      // A lookup that failed for any reason other than "signed out" must not
-      // block the save: the point of the check is to catch a real divergence,
-      // not to make saving depend on a second request succeeding.
+      // Automatic updates stop when the remote revision cannot be checked.
+      // Manual saves keep the existing behavior for an unavailable lookup.
       if (error instanceof CloudSignInRequiredError) throw error;
+      if (automatic) throw error;
       return;
     }
+    if (cloudApi.accountId() !== accountId) throw new CloudSignInRequiredError();
     if (!remote) {
-      // Deleted elsewhere. Saving recreates it, which is what the user asked
-      // for, so drop the stale link and carry on.
+      // Only a manual save may recreate a deleted cloud copy.
       await deleteCloudLink(projectId);
+      if (automatic) throw new CloudAutoSaveConsentRequiredError();
       return;
+    }
+    if (automatic && (remote.id !== link.recordId || remote.projectId !== projectId)) {
+      throw new CloudAutoSaveConsentRequiredError();
     }
     if (remote.updated !== link.remoteUpdated) throw new CloudConflictError(remote);
     return;
   }
+  if (automatic) throw new CloudAutoSaveConsentRequiredError();
 
   let listed: CloudProject[] = [];
   try {
@@ -387,7 +447,7 @@ export async function loadProjectFromCloud(
   // A copy is a new project with no cloud row of its own. Only the in-place
   // restore inherits the link, and it inherits the remote's `updated` too, so
   // the next save from this device is not immediately a conflict with itself.
-  if (!asCopy) await putCloudLink(localId, accountId, summary, []);
+  if (!asCopy) await putCloudLink(localId, accountId, summary, [], 'cloud-open');
   return project;
 }
 

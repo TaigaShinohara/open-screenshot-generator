@@ -274,7 +274,7 @@ export function claudeWriterStatus(detection: ClaudeDetection): AgentWriterStatu
   const plan = detection.subscriptionType ? CLAUDE_PLANS[detection.subscriptionType] ?? detection.subscriptionType : null;
   const label = plan ? `Claude Code (${plan} plan)` : 'Claude Code';
   if (detection.unavailable === 'sandboxed') {
-    return { ready: false, label, detail: 'Claude Code cannot run in the Mac App Store version of Open Screenshot Generator' };
+    return { ready: false, label, detail: 'Claude Code cannot run in the Mac App Store version of tiger screen shot' };
   }
   if (!detection.found) return { ready: false, label, detail: 'Claude Code is not installed on your computer' };
   if (detection.error) return { ready: false, label, detail: `Claude Code did not start: ${detection.error}` };
@@ -289,7 +289,7 @@ export function codexWriterStatus(detection: CodexDetection): AgentWriterStatus 
   const plan = detection.planType ? CODEX_PLANS[detection.planType] ?? detection.planType : null;
   const label = plan ? `Codex (ChatGPT ${plan} plan)` : 'Codex';
   if (detection.unavailable === 'sandboxed') {
-    return { ready: false, label, detail: 'Codex cannot run in the Mac App Store version of Open Screenshot Generator' };
+    return { ready: false, label, detail: 'Codex cannot run in the Mac App Store version of tiger screen shot' };
   }
   if (!detection.found) return { ready: false, label, detail: 'Codex is not installed on your computer' };
   if (detection.loginStore === 'keyring') {

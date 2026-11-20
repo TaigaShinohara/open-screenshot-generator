@@ -34,7 +34,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, Runtime, Url};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
-/// Every change of state goes to `main` on this channel.
+/// Every change of state goes to the editor windows on this channel.
 const STATE_EVENT: &str = "abs-update-state";
 /// Asks each editor window to write its unsaved edits before an install.
 const FLUSH_EVENT: &str = "abs-update-flush";
@@ -200,6 +200,38 @@ struct Flush {
     waiting: HashSet<String>,
     /// Set by a window that could not write its edits. The install is called off.
     failed: Option<String>,
+}
+
+impl Flush {
+    fn acknowledge(&mut self, nonce: u64, label: &str, ok: bool) -> bool {
+        if self.nonce != nonce || !self.waiting.remove(label) {
+            return false;
+        }
+        if !ok {
+            self.failed.get_or_insert_with(|| label.to_string());
+        }
+        true
+    }
+}
+
+enum FlushWait {
+    Answered,
+    TimedOut,
+    Failed,
+}
+
+fn edits_not_saved() -> String {
+    format!("{EDITS_NOT_SAVED}: not every editor window confirmed its edits were saved")
+}
+
+fn flush_result(nonce: u64, finished: Option<Flush>, wait: FlushWait) -> Result<(), String> {
+    if !matches!(wait, FlushWait::Answered) {
+        return Err(edits_not_saved());
+    }
+    match finished {
+        Some(flush) if flush.nonce == nonce && flush.failed.is_none() && flush.waiting.is_empty() => Ok(()),
+        _ => Err(edits_not_saved()),
+    }
 }
 
 pub struct UpdateState {
@@ -432,10 +464,16 @@ fn require_main<R: Runtime>(window: &tauri::Window<R>) -> Result<(), String> {
     }
 }
 
-/// Sends the current state to the page and returns it.
+fn editor_window_labels(labels: impl IntoIterator<Item = String>) -> Vec<String> {
+    labels.into_iter().filter(|label| crate::settings::is_editor_window(label)).collect()
+}
+
+/// Sends the current state to every editor window and returns it.
 fn publish<R: Runtime>(app: &AppHandle<R>) -> Snapshot {
     let snapshot = app.state::<UpdateState>().snapshot();
-    let _ = app.emit_to("main", STATE_EVENT, &snapshot);
+    for label in editor_window_labels(app.webview_windows().into_keys()) {
+        let _ = app.emit_to(label.as_str(), STATE_EVENT, &snapshot);
+    }
     snapshot
 }
 
@@ -704,46 +742,45 @@ pub async fn abs_update_install<R: Runtime>(app: AppHandle<R>, window: tauri::Wi
     }
 }
 
-/// Asks every editor window to write its edits and waits until each one has
-/// answered, or FLUSH_WAIT runs out. A window that has not answered by then is
-/// taken to have nothing to write (it may still be loading); one that answers
-/// that it could not write fails the whole thing.
+/// Continues the install only after every editor window confirms it saved its
+/// edits. A missing answer, timeout or failed request stops the install.
 async fn flush_editor_windows<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let state = app.state::<UpdateState>();
-    let labels: Vec<String> = app
-        .webview_windows()
-        .into_keys()
-        .filter(|label| crate::settings::is_editor_window(label))
-        .collect();
+    let labels = editor_window_labels(app.webview_windows().into_keys());
     if labels.is_empty() {
         return Ok(());
     }
     let nonce = state.flush_nonce.fetch_add(1, Ordering::SeqCst);
-    *state.flush.0.lock().unwrap() = Some(Flush {
+    *state.flush.0.lock().map_err(|_| edits_not_saved())? = Some(Flush {
         nonce,
         waiting: labels.iter().cloned().collect(),
         failed: None,
     });
     for label in &labels {
-        let _ = app.emit_to(label.as_str(), FLUSH_EVENT, nonce);
+        if app.emit_to(label.as_str(), FLUSH_EVENT, nonce).is_err() {
+            state.flush.0.lock().map_err(|_| edits_not_saved())?.take();
+            return Err(edits_not_saved());
+        }
     }
     let flush = state.flush.clone();
-    let _ = tauri::async_runtime::spawn_blocking(move || {
+    let waited = tauri::async_runtime::spawn_blocking(move || {
         let (lock, answered) = &*flush;
-        let guard = lock.lock().unwrap();
-        let _ = answered.wait_timeout_while(guard, FLUSH_WAIT, |pending| {
+        let guard = lock.lock().map_err(|_| ())?;
+        let (_guard, timeout) = answered.wait_timeout_while(guard, FLUSH_WAIT, |pending| {
             pending
                 .as_ref()
-                .is_some_and(|flush| flush.failed.is_none() && !flush.waiting.is_empty())
-        });
+                .is_some_and(|flush| flush.nonce == nonce && flush.failed.is_none() && !flush.waiting.is_empty())
+        }).map_err(|_| ())?;
+        Ok::<bool, ()>(timeout.timed_out())
     })
     .await;
-    let finished = state.flush.0.lock().unwrap().take();
-    match finished.and_then(|flush| flush.failed) {
-        // The page reads the prefix (lib/updates/store.ts) to say why nothing happened.
-        Some(label) => Err(format!("{EDITS_NOT_SAVED}: the {label} window could not save its edits")),
-        None => Ok(()),
-    }
+    let wait = match waited {
+        Ok(Ok(false)) => FlushWait::Answered,
+        Ok(Ok(true)) => FlushWait::TimedOut,
+        _ => FlushWait::Failed,
+    };
+    let finished = state.flush.0.lock().map_err(|_| edits_not_saved())?.take();
+    flush_result(nonce, finished, wait)
 }
 
 /// An editor window answered the install numbered `nonce`: `ok` is whether it
@@ -752,12 +789,10 @@ async fn flush_editor_windows<R: Runtime>(app: &AppHandle<R>) -> Result<(), Stri
 pub fn abs_update_flushed<R: Runtime>(app: AppHandle<R>, window: tauri::Window<R>, nonce: u64, ok: bool) {
     let state = app.state::<UpdateState>();
     let (lock, answered) = &*state.flush;
-    let mut pending = lock.lock().unwrap();
-    if let Some(flush) = pending.as_mut().filter(|flush| flush.nonce == nonce) {
-        flush.waiting.remove(window.label());
-        if !ok {
-            flush.failed.get_or_insert_with(|| window.label().to_string());
-        }
+    let Ok(mut pending) = lock.lock() else {
+        return;
+    };
+    if pending.as_mut().is_some_and(|flush| flush.acknowledge(nonce, window.label(), ok)) {
         answered.notify_all();
     }
 }
@@ -769,6 +804,100 @@ mod tests {
 
     const TEMPLATE: &str =
         "https://updates.example.com/v1/desktop/{{target}}/{{arch}}/{{bundle_type}}/{{current_version}}";
+
+    fn pending_flush() -> Flush {
+        Flush {
+            nonce: 42,
+            waiting: ["main", "editor-1"].into_iter().map(str::to_owned).collect(),
+            failed: None,
+        }
+    }
+
+    fn assert_edits_not_saved(result: Result<(), String>) {
+        assert!(result.unwrap_err().starts_with(EDITS_NOT_SAVED));
+    }
+
+    #[test]
+    fn update_state_and_save_requests_only_target_editor_windows() {
+        let labels = ["main", "editor-1", "panel-1", "assistant-1", "splash", "editor", "editorial"]
+            .into_iter()
+            .map(str::to_owned);
+        assert_eq!(editor_window_labels(labels), vec!["main".to_string(), "editor-1".to_string()]);
+    }
+
+    #[test]
+    fn an_install_waits_for_every_editor_to_confirm_its_edits() {
+        let mut flush = pending_flush();
+        assert!(flush.acknowledge(42, "main", true));
+        assert_edits_not_saved(flush_result(42, Some(flush), FlushWait::Answered));
+
+        let mut flush = pending_flush();
+        assert!(flush.acknowledge(42, "main", true));
+        assert!(flush.acknowledge(42, "editor-1", true));
+        assert_eq!(flush_result(42, Some(flush), FlushWait::Answered), Ok(()));
+    }
+
+    #[test]
+    fn a_flush_timeout_stops_the_install_even_if_the_last_answer_arrives_late() {
+        assert_edits_not_saved(flush_result(42, Some(pending_flush()), FlushWait::TimedOut));
+
+        let mut flush = pending_flush();
+        flush.acknowledge(42, "main", true);
+        flush.acknowledge(42, "editor-1", true);
+        assert_edits_not_saved(flush_result(42, Some(flush), FlushWait::TimedOut));
+    }
+
+    #[test]
+    fn one_editor_that_cannot_save_stops_the_install() {
+        let mut flush = pending_flush();
+        flush.acknowledge(42, "main", true);
+        flush.acknowledge(42, "editor-1", false);
+        assert!(flush.waiting.is_empty());
+        assert_edits_not_saved(flush_result(42, Some(flush), FlushWait::Answered));
+    }
+
+    #[test]
+    fn a_missing_flush_result_stops_the_install() {
+        assert_edits_not_saved(flush_result(42, None, FlushWait::Answered));
+    }
+
+    #[test]
+    fn a_failed_wait_stops_the_install_after_every_editor_answered() {
+        let mut flush = pending_flush();
+        flush.acknowledge(42, "main", true);
+        flush.acknowledge(42, "editor-1", true);
+        assert_edits_not_saved(flush_result(42, Some(flush), FlushWait::Failed));
+    }
+
+    #[test]
+    fn answers_from_another_flush_or_window_cannot_confirm_edits() {
+        let mut flush = pending_flush();
+        assert!(!flush.acknowledge(41, "main", true));
+        assert!(!flush.acknowledge(42, "panel-1", true));
+        assert!(!flush.acknowledge(42, "panel-1", false));
+        assert_eq!(flush.waiting.len(), 2);
+        assert!(flush.failed.is_none());
+        assert_edits_not_saved(flush_result(42, Some(flush), FlushWait::Answered));
+    }
+
+    #[test]
+    fn a_result_from_another_flush_cannot_allow_the_install() {
+        let mut flush = pending_flush();
+        flush.acknowledge(42, "main", true);
+        flush.acknowledge(42, "editor-1", true);
+        assert_edits_not_saved(flush_result(43, Some(flush), FlushWait::Answered));
+    }
+
+    #[test]
+    fn duplicate_answers_cannot_change_the_first_result() {
+        let mut flush = pending_flush();
+        assert!(flush.acknowledge(42, "main", false));
+        assert!(!flush.acknowledge(42, "main", true));
+        assert_eq!(flush.failed.as_deref(), Some("main"));
+        assert!(flush.acknowledge(42, "editor-1", true));
+        assert!(!flush.acknowledge(42, "editor-1", false));
+        assert_edits_not_saved(flush_result(42, Some(flush), FlushWait::Answered));
+    }
 
     #[test]
     fn the_endpoint_keeps_its_placeholders_and_gains_channel_and_bucket() {

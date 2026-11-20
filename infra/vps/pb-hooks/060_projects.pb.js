@@ -3,18 +3,20 @@
 /**
  * Cloud projects: saving the editable document to this box, and reading it back.
  *
- * Eleven routes. Eight of them require a bearer token and then check that the row
+ * Thirteen routes. Ten of them require a bearer token and then check that the row
  * belongs to that account; three read a project the owner has explicitly switched
  * to link sharing, by its slug. There is no anonymous save, no anonymous listing,
  * and no route that takes an owner id from the request.
  *
  *   GET    /api/openscreengen/projects                        auth    the account's projects
  *   POST   /api/openscreengen/projects                        auth    save (multipart)
+ *   PUT    /api/openscreengen/projects/{id}                   auth    conditional update (multipart)
  *   GET    /api/openscreengen/projects/{id}                   auth    one, with its asset index
  *   DELETE /api/openscreengen/projects/{id}                   auth    delete it and its blobs
  *   PUT    /api/openscreengen/projects/{id}/share             auth    turn the link on or off
  *   GET    /api/openscreengen/projects/{id}/doc               auth    stream project.json
- *   POST   /api/openscreengen/projects/{id}/assets            auth    upload one blob (multipart)
+ *   POST   /api/openscreengen/projects/{id}/assets            auth    legacy blob upload (multipart)
+ *   PUT    /api/openscreengen/projects/{id}/assets            auth    conditional blob upload (multipart)
  *   GET    /api/openscreengen/projects/{id}/assets/{assetId}  auth    stream one blob
  *   GET    /api/openscreengen/shared/{slug}                   public  a link-shared project
  *   GET    /api/openscreengen/shared/{slug}/doc               public  its document
@@ -235,6 +237,103 @@ routerAdd(
   $apis.bodyLimit(20 * 1024 * 1024)
 );
 
+// Automatic saves use a separate update route so older backends cannot treat
+// an unrecognized precondition as permission to create a project.
+routerAdd('PUT', '/api/openscreengen/projects/{id}', (e) => {
+  const openscreengen = require(`${__hooks}/lib/openscreengen.js`);
+  const config = openscreengen.settings($app);
+  if (!config.cloud_projects_enabled) return e.json(503, { error: 'cloud projects are switched off' });
+  if (!config.writes_enabled) return e.json(503, { error: 'this box is read only right now' });
+
+  const auth = openscreengen.authUser($app, e);
+  if (auth.fail) return e.json(auth.fail.status, { error: auth.fail.error });
+
+  const recordId = e.request.pathValue('id');
+  const expectedRecordId = openscreengen.formValue(e, 'expected_record_id');
+  const expectedUpdated = openscreengen.formValue(e, 'expected_updated');
+  const projectId = openscreengen.clampText(openscreengen.formValue(e, 'project_id'), 120);
+  if (!projectId || !expectedUpdated || expectedRecordId !== recordId) {
+    return e.json(400, { error: 'that update is missing its cloud copy details' });
+  }
+
+  const files = e.findUploadedFiles('doc');
+  if (!files || !files.length) return e.json(400, { error: 'that save carried no project data' });
+  const doc = files[0];
+  if (doc.size > config.max_cloud_doc_bytes) {
+    return e.json(413, { error: 'that project document is too large to store here' });
+  }
+
+  let wanted = [];
+  try {
+    const parsed = JSON.parse(openscreengen.formValue(e, 'manifest_assets') || '[]');
+    if (Array.isArray(parsed)) wanted = parsed;
+  } catch {
+    wanted = [];
+  }
+  const wantedIds = {};
+  let counted = 0;
+  for (const entry of wanted) {
+    if (counted >= 200) break;
+    const id = openscreengen.clampText(entry && entry.id, 120);
+    if (!id || wantedIds[id]) continue;
+    wantedIds[id] = entry && entry.kind === 'font' ? 'font' : 'media';
+    counted += 1;
+  }
+
+  let result = null;
+  let refusal = null;
+  try {
+    $app.runInTransaction((txApp) => {
+      const row = openscreengen.ownedProject(txApp, recordId, auth.user.id);
+      if (!row || row.getString('project_id') !== projectId) {
+        refusal = { status: 404, error: 'that cloud copy no longer exists. Save the project again to create a copy' };
+        return;
+      }
+      if (row.getDateTime('updated').string() !== expectedUpdated) {
+        refusal = { status: 409, error: 'this project was saved from another device. Open that copy, or replace it' };
+        return;
+      }
+
+      row.set('name', openscreengen.clampText(openscreengen.formValue(e, 'name'), 120) || 'Untitled project');
+      row.set('doc', doc);
+      row.set('doc_bytes', doc.size);
+      row.set('doc_encoding', openscreengen.formValue(e, 'doc_encoding') === 'gzip' ? 'gzip' : 'none');
+      row.set('boards', Math.max(0, Math.min(500, Number(openscreengen.formValue(e, 'boards')) || 0)));
+      row.set('format_version', Math.max(1, Math.min(99, Number(openscreengen.formValue(e, 'format_version')) || 1)));
+      txApp.save(row);
+
+      const held = openscreengen.projectAssets(txApp, row.id);
+      const have = {};
+      for (const asset of held) {
+        const id = asset.getString('asset_id');
+        if (wantedIds[id]) have[id] = true;
+        else txApp.delete(asset);
+      }
+      const missing = [];
+      for (const id in wantedIds) {
+        if (!have[id]) missing.push({ id: id, kind: wantedIds[id] });
+      }
+
+      const assets = openscreengen.projectAssets(txApp, row.id);
+      let assetBytes = 0;
+      for (const asset of assets) assetBytes += asset.getInt('size') || 0;
+      if (assetBytes !== row.getInt('asset_bytes')) {
+        row.set('asset_bytes', assetBytes);
+        txApp.save(row);
+      }
+      result = {
+        project: openscreengen.cloudProjectOf(row, assets, { owner: true, assets: true }),
+        missing: missing,
+      };
+    });
+  } catch (error) {
+    console.warn('openscreengen: could not update a cloud project', error);
+    return e.json(500, { error: 'that cloud project could not be updated' });
+  }
+  if (refusal) return e.json(refusal.status, { error: refusal.error });
+  return e.json(200, result);
+}, $apis.bodyLimit(20 * 1024 * 1024));
+
 routerAdd('GET', '/api/openscreengen/projects/{id}', (e) => {
   const openscreengen = require(`${__hooks}/lib/openscreengen.js`);
   const config = openscreengen.settings($app);
@@ -345,116 +444,17 @@ routerAdd('GET', '/api/openscreengen/projects/{id}/doc', (e) => {
  * and its own progress bar, and a connection that drops in the middle of a
  * five-video project costs one video rather than the save.
  */
-routerAdd(
-  'POST',
-  '/api/openscreengen/projects/{id}/assets',
-  (e) => {
-    const openscreengen = require(`${__hooks}/lib/openscreengen.js`);
-    const config = openscreengen.settings($app);
-    if (!config.cloud_projects_enabled) return e.json(503, { error: 'cloud projects are switched off' });
-    if (!config.writes_enabled) return e.json(503, { error: 'this box is read only right now' });
+routerAdd('POST', '/api/openscreengen/projects/{id}/assets', (e) => {
+  const openscreengen = require(`${__hooks}/lib/openscreengen.js`);
+  const assets = require(`${__hooks}/lib/cloudAssets.js`);
+  return assets.upload($app, e, openscreengen, false);
+}, $apis.bodyLimit(100 * 1024 * 1024));
 
-    const auth = openscreengen.authUser($app, e);
-    if (auth.fail) return e.json(auth.fail.status, { error: auth.fail.error });
-    const user = auth.user;
-
-    const project = openscreengen.ownedProject($app, e.request.pathValue('id'), user.id);
-    if (!project) return e.json(404, { error: 'no such project' });
-
-    const assetId = openscreengen.clampText(openscreengen.formValue(e, 'asset_id'), 120);
-    if (!assetId) return e.json(400, { error: 'that upload named no asset' });
-
-    const files = e.findUploadedFiles('file');
-    if (!files || !files.length) return e.json(400, { error: 'that upload carried no file' });
-    const file = files[0];
-    if (file.size > config.max_cloud_asset_bytes) {
-      return e.json(413, { error: 'that file is too large to store here' });
-    }
-
-    /*
-     * Two ceilings, checked in this order because they say different things.
-     *
-     * The per-project one is about this project being unreasonable; the
-     * per-account one is about the disk. Both are computed from the rows rather
-     * than from a stored total, so a delete that half failed cannot leave
-     * somebody permanently over their limit.
-     */
-    const held = openscreengen.projectAssets($app, project.id);
-    let projectBytes = project.getInt('doc_bytes') || 0;
-    let existing = null;
-    for (const row of held) {
-      if (row.getString('asset_id') === assetId) {
-        existing = row;
-        continue; // replaced, so its bytes are not part of the new total
-      }
-      projectBytes += row.getInt('size') || 0;
-    }
-    if (projectBytes + file.size > config.max_cloud_project_bytes) {
-      return e.json(413, { error: 'this project has reached the size limit for cloud storage' });
-    }
-
-    const userBytes = openscreengen.cloudBytesForUser($app, user.id) - (existing ? existing.getInt('size') || 0 : 0);
-    if (userBytes + file.size > config.max_cloud_user_bytes) {
-      return e.json(413, {
-        error: 'your cloud storage is full. Delete a project to free some space',
-      });
-    }
-
-    let meta = {};
-    try {
-      const parsed = JSON.parse(openscreengen.formValue(e, 'meta') || '{}');
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) meta = parsed;
-    } catch {
-      meta = {};
-    }
-
-    const record = existing || new Record($app.findCollectionByNameOrId('cloud_project_assets'));
-    record.set('project', project.id);
-    // From the token, never from the body, exactly as the post route does it.
-    record.set('owner', user.id);
-    record.set('asset_id', assetId);
-    record.set('kind', openscreengen.formValue(e, 'kind') === 'font' ? 'font' : 'media');
-    record.set('file', file);
-    record.set('size', file.size);
-    record.set('meta', meta);
-
-    try {
-      $app.save(record);
-    } catch (err) {
-      console.warn('openscreengen: could not store a project asset —', err);
-      return e.json(500, { error: 'that file could not be stored' });
-    }
-
-    const assets = openscreengen.projectAssets($app, project.id);
-    let assetBytes = 0;
-    for (const row of assets) assetBytes += row.getInt('size') || 0;
-    try {
-      project.set('asset_bytes', assetBytes);
-      $app.save(project);
-    } catch (err) {
-      console.warn('openscreengen: could not restate asset_bytes —', err);
-    }
-
-    /*
-     * `updated` goes back with every upload, and the client keeps the last one.
-     *
-     * Saving the project row again to restate `asset_bytes` moves its autodate,
-     * so the stamp the save route handed out is stale the moment the first blob
-     * lands. Without this the client's next save compares a stamp from before
-     * the uploads against the row as it is now, decides another device wrote it,
-     * and puts an overwrite prompt in front of somebody saving their own work
-     * for the second time.
-     */
-    return e.json(200, {
-      assetId: assetId,
-      size: file.size,
-      assetBytes: assetBytes,
-      updated: project.getDateTime('updated').string(),
-    });
-  },
-  // One asset at its ceiling, plus the form.
-  $apis.bodyLimit(100 * 1024 * 1024)
-);
+routerAdd('PUT', '/api/openscreengen/projects/{id}/assets', (e) => {
+  const openscreengen = require(`${__hooks}/lib/openscreengen.js`);
+  const assets = require(`${__hooks}/lib/cloudAssets.js`);
+  return assets.upload($app, e, openscreengen, true);
+}, $apis.bodyLimit(100 * 1024 * 1024));
 
 routerAdd('GET', '/api/openscreengen/projects/{id}/assets/{assetId}', (e) => {
   const openscreengen = require(`${__hooks}/lib/openscreengen.js`);

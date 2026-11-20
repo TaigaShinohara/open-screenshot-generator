@@ -524,7 +524,7 @@ test('Slack gets a webhook of its own kind only, with what reviewers wrote escap
   assert.ok(message.includes('★★☆☆☆ *Bad &amp; buggy* (United States)'));
   assert.ok(message.includes('&lt;script&gt;'));
   const many = slackMessage('Notes', Array.from({ length: 7 }, (_, index) => review(`r${index}`)));
-  assert.ok(many.endsWith('And 2 more in Open Screenshot Generator'));
+  assert.ok(many.endsWith('And 2 more in tiger screen shot'));
 });
 
 // --- summaries on a schedule -------------------------------------------------------------------

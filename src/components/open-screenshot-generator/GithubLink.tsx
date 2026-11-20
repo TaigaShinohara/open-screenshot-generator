@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { isTauri, openExternal } from '@/lib/desktop';
 
-export const REPO_URL = 'https://github.com/dotnetdreamer/open-screenshot-generator';
+export const REPO_URL = 'https://github.com/TaigaShinohara/open-screenshot-generator';
 
 export function GithubMark({ className }: { className?: string }) {
   return (
@@ -38,7 +38,7 @@ export function GithubMark({ className }: { className?: string }) {
 export function GithubLinkButton({
   className,
   label,
-  title = 'Open Screenshot Generator on GitHub, star it or report an issue',
+  title = 'tiger screen shot on GitHub, star it or report an issue',
 }: {
   className?: string;
   label?: string;

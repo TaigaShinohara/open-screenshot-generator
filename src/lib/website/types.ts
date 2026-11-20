@@ -9,7 +9,7 @@
 // the site is shown or published, so the site never shows an old design.
 //
 // Not to be confused with the folder `website/` at the top of this repository,
-// which is Open Screenshot Generator's own site.
+// which is tiger screen shot's own site.
 
 export type SitePage = 'home' | 'support' | 'privacy';
 
@@ -124,7 +124,7 @@ export interface PrivacyAnswers {
 }
 
 export interface SiteOptions {
-  /** A small "Made with Open Screenshot Generator" line in the footer. */
+  /** A small "Made with tiger screen shot" line in the footer. */
   credit: boolean;
   /** The screenshots on the home page. */
   screenshots: boolean;

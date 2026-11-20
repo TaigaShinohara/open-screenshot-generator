@@ -23,13 +23,17 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { flagString } from '../args.js';
+import { flagList, flagString } from '../args.js';
+import { DEVICE_FORMAT_PRESETS } from '@/lib/deviceRegistry';
 import { DEFAULTS } from '../config.js';
 import type { CommandContext } from '../context.js';
 import { EXIT, usageError } from '../errors.js';
 import { emit, fail, green, humanBytes, info, ok, red, step, warn, yellow } from '../log.js';
 import { readMp4File } from '../verify/mp4.js';
 import { readPngFile } from '../verify/png.js';
+import { localeOf } from '../verify/locales.js';
+import { resolveDeviceFormat } from '../formats.js';
+import { localesOf, readProjectFile } from './render.js';
 import {
   checkMp4,
   checkPng,
@@ -48,7 +52,7 @@ import {
 const PNG_EXT = new Set(['.png']);
 const VIDEO_EXT = new Set(['.mp4', '.m4v', '.mov']);
 
-interface FileReport {
+export interface FileReport {
   /** Relative to the audited directory, forward slashes on every OS. */
   file: string;
   kind: 'png' | 'video';
@@ -59,6 +63,7 @@ interface FileReport {
   bytes: number;
   level: RuleLevel;
   findings: Finding[];
+  locale: string | null;
 }
 
 interface SetReport {
@@ -88,7 +93,7 @@ function walk(dir: string, out: string[]): string[] {
   return out;
 }
 
-function auditFile(file: string, rel: string, ruleset: StoreRuleset): FileReport {
+function auditFile(file: string, rel: string, ruleset: StoreRuleset): Omit<FileReport, 'locale'> {
   const bytes = fs.statSync(file).size;
   const kind: 'png' | 'video' = PNG_EXT.has(path.extname(file).toLowerCase()) ? 'png' : 'video';
 
@@ -148,19 +153,17 @@ function auditFile(file: string, rel: string, ruleset: StoreRuleset): FileReport
 }
 
 /**
- * A set is one folder at one pixel size, because that is how a store counts:
- * per display size, per locale. Grouping on the folder alone would call two
- * formats rendered side by side one set of twenty and fail a good run; grouping
- * on the size alone would merge every locale into one.
+ * Stores count screenshots per language and size. A language may be named by
+ * its folder or by the prefix the web exporter puts on each filename.
  */
-function auditSets(rows: FileReport[], ruleset: StoreRuleset): SetReport[] {
+export function auditSets(rows: FileReport[], ruleset: StoreRuleset): SetReport[] {
   const groups = new Map<string, { label: string; kind: 'png' | 'video'; files: number }>();
   for (const row of rows) {
     if (!row.width || !row.height) continue;
     // One header per language is the whole set, and it is not a screenshot.
     if (row.kind === 'png' && isCreativeArt(row.width, row.height, ruleset)) continue;
     const folder = path.posix.dirname(row.file);
-    const label = `${folder === '.' ? '' : `${folder} `}${row.width}x${row.height}`;
+    const label = `${folder === '.' ? '' : `${folder} `}${row.locale ? `${row.locale} ` : ''}${row.width}x${row.height}`;
     const key = `${row.kind}:${label}`;
     const existing = groups.get(key);
     if (existing) existing.files += 1;
@@ -177,6 +180,47 @@ function auditSets(rows: FileReport[], ruleset: StoreRuleset): SetReport[] {
     sets.push({ label: group.label, kind: group.kind, files: group.files, level: worstLevel(findings), findings });
   }
   return sets;
+}
+
+export function auditListing(
+  rows: FileReport[],
+  ruleset: StoreRuleset,
+  options: { locales?: string[]; formats?: string[] } = {}
+): Finding[] {
+  const groups = new Map<string | null, FileReport[]>();
+  for (const locale of options.locales ?? []) groups.set(locale, []);
+  for (const row of rows) {
+    if (row.kind !== 'png') continue;
+    const group = groups.get(row.locale) ?? [];
+    group.push(row);
+    groups.set(row.locale, group);
+  }
+  const findings: Finding[] = [];
+  const formats = (options.formats ?? []).flatMap((id) => {
+    const mapped = resolveDeviceFormat(id);
+    return mapped ? [DEVICE_FORMAT_PRESETS.find((preset) => preset.id === mapped)!] : [];
+  });
+  for (const [locale, files] of groups) {
+    const label = locale ?? 'base';
+    if (files.length === 0 && options.locales?.includes(label)) {
+      findings.push(...checkScreenshotCount(0, label, ruleset));
+    }
+    const sizes = files.flatMap((row) => row.width && row.height ? [{ width: row.width, height: row.height }] : []);
+    findings.push(...checkRequiredIphoneSlot(sizes, ruleset).map((finding) => ({
+      ...finding,
+      message: locale ? `${locale}: ${finding.message}` : finding.message,
+    })));
+    for (const format of formats) {
+      const { width, height } = format.artboard;
+      if (sizes.some((size) => (size.width === width && size.height === height) || (size.width === height && size.height === width))) continue;
+      findings.push({
+        level: 'fail',
+        code: 'set-required-format-missing',
+        message: `${label} has no ${width}x${height} screenshots for ${format.label}`,
+      });
+    }
+  }
+  return findings;
 }
 
 const BADGE: Record<RuleLevel, string> = { ok: 'ok  ', warn: 'warn', fail: 'FAIL' };
@@ -256,13 +300,24 @@ export async function run(ctx: CommandContext): Promise<number> {
 
   step(`verify: ${plural(files.length, 'file')} against the ${ruleset.label} rules`);
 
-  const rows = files.map((file) => auditFile(file, path.relative(dir, file).split(path.sep).join('/'), ruleset));
+  let projectLocales: { base: string | null; codes: string[] } = { base: null, codes: [] };
+  if (fs.existsSync(ctx.projectFile)) {
+    try {
+      projectLocales = localesOf(readProjectFile(ctx.projectFile).boards);
+    } catch {
+      // Verification also accepts folders without a readable project file.
+    }
+  }
+  const requestedLocales = flagList(ctx.args.flags, 'locales') ?? ctx.config.locales;
+  const locales = requestedLocales?.includes('all') ? projectLocales.codes : requestedLocales;
+  const knownLocales = [...projectLocales.codes, ...(locales ?? [])];
+  const fallbackLocale = locales?.length === 1 ? locales[0] : projectLocales.base;
+  const rows = files.map((file) => {
+    const rel = path.relative(dir, file).split(path.sep).join('/');
+    return { ...auditFile(file, rel, ruleset), locale: localeOf(rel, knownLocales) ?? fallbackLocale };
+  });
   const sets = auditSets(rows, ruleset);
-  // Rules about the listing as a whole, which neither a file nor a set answers.
-  const listing = checkRequiredIphoneSlot(
-    rows.flatMap((row) => (row.kind === 'png' && row.width && row.height ? [{ width: row.width, height: row.height }] : [])),
-    ruleset
-  );
+  const listing = auditListing(rows, ruleset, { locales, formats: flagList(ctx.args.flags, 'formats') });
 
   const failures =
     rows.filter((row) => row.level === 'fail').length +

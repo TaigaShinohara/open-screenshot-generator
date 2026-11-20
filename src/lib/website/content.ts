@@ -11,7 +11,7 @@
 import { suggestedAppName } from '@/lib/creative/layouts';
 import { projectBoards } from '@/lib/growth/projectShots';
 import { hash32 } from '@/lib/i18n/hash';
-import { DEFAULT_BASE_LOCALE, getLocaleDef } from '@/lib/i18n/locales';
+import { getLocaleDef } from '@/lib/i18n/locales';
 import type { ArtboardState, TextElementProps } from '@/types/artboard';
 import { cleanPrivacy, defaultPrivacy, isDataUse } from './privacy';
 import type { PrivacyAnswers, SiteContent, SiteDraft, SiteFacts, SiteFaq, SiteFeature, SiteTheme } from './types';
@@ -192,7 +192,7 @@ export function defaultContent(input: { facts: SiteFacts; captions: Caption[]; p
   return {
     // The sentences below are English, so a site in another language
     // translates them into its own language as well, captions included.
-    lang: input.baseLocale.startsWith('en') ? input.baseLocale : DEFAULT_BASE_LOCALE,
+    lang: input.baseLocale.startsWith('en') ? input.baseLocale : 'en-US',
     headline: first?.title || input.facts.tagline.trim() || app,
     subhead: input.facts.tagline.trim() && first?.title ? input.facts.tagline.trim() : first?.body || '',
     features,

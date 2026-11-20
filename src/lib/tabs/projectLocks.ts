@@ -108,16 +108,16 @@ export function releaseProjectLock(projectId: string): void {
  * is turned down (see handingOver). The returned function ends the hand-over
  * and lets go of the lock, once the project's last writes are done.
  */
-export function startHandOver(projectId: string): () => void {
+export function startHandOver(projectId: string): (release?: boolean) => void {
   handingOver.set(projectId, (handingOver.get(projectId) ?? 0) + 1);
   let ended = false;
-  return () => {
+  return (release = true) => {
     if (ended) return;
     ended = true;
     const left = (handingOver.get(projectId) ?? 1) - 1;
     if (left > 0) handingOver.set(projectId, left);
     else handingOver.delete(projectId);
-    releaseProjectLock(projectId);
+    if (release) releaseProjectLock(projectId);
   };
 }
 

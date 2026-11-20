@@ -118,7 +118,7 @@ export function slackMessage(appName: string, reviews: StoreReview[]): string {
     const place = where(review);
     lines.push(`${stars(review.rating)}${review.title ? ` *${slackText(review.title)}*` : ''}${place ? ` (${slackText(place)})` : ''}\n>${slackText(excerpt)}`);
   }
-  if (reviews.length > SLACK_REVIEWS) lines.push(`And ${reviews.length - SLACK_REVIEWS} more in Open Screenshot Generator`);
+  if (reviews.length > SLACK_REVIEWS) lines.push(`And ${reviews.length - SLACK_REVIEWS} more in tiger screen shot`);
   return lines.join('\n');
 }
 

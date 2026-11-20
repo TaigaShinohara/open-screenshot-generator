@@ -106,7 +106,7 @@ export function DetachedPanelsWindow() {
     void refreshMonitors();
   }, [refreshMonitors]);
 
-  const title = snapshot?.projectName?.trim() || 'Open Screenshot Generator';
+  const title = snapshot?.projectName?.trim() || 'tiger screen shot';
 
   // The OS window title is set once, when the window is created, from whatever
   // the project was called then. Rename the project or open a different one and

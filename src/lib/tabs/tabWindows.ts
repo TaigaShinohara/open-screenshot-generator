@@ -148,7 +148,7 @@ async function openDesktopWindow(
     const label = `editor-${key}`;
     const created = new WebviewWindow(label, {
       url,
-      title: title ? `${title} - Open Screenshot Generator` : 'Open Screenshot Generator',
+      title: title ? `${title} - tiger screen shot` : 'tiger screen shot',
       width: WINDOW_WIDTH,
       height: WINDOW_HEIGHT,
       minWidth: 1024,

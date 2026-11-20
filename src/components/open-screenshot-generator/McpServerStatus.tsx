@@ -312,7 +312,7 @@ export function McpServerStatus({
             </span>
           </DialogTitle>
           <DialogDescription>
-            Let external AI tools drive Open Screenshot Generator. Add the server to a client below, then ask it to design.
+            Let external AI tools drive tiger screen shot. Add the server to a client below, then ask it to design.
           </DialogDescription>
         </DialogHeader>
 

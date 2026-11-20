@@ -596,7 +596,7 @@ function KeywordsTitle({ appName }: { appName: string | null }) {
       <div className="flex items-center gap-1">
         <h2 className="text-base font-semibold">Keywords</h2>
         <InfoTip label="How Growth finds your rank">
-          <p>Growth searches the App Store for each keyword in each country once a day, while the main window of Open Screenshot Generator is open.</p>
+          <p>Growth searches the App Store for each keyword in each country once a day, while the main window of tiger screen shot is open.</p>
           <p>
             Growth reads Apple&apos;s public App Store search, not the App Store app on an iPhone, which can order apps differently. Ads aren&apos;t counted.
           </p>

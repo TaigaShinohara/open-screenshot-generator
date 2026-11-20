@@ -177,7 +177,7 @@ export function writePdf(pages: PdfPage[], title: string, contentWidth = A4.widt
   object(1, '<< /Type /Catalog /Pages 2 0 R >>');
   object(2, `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pages.length} >>`);
   object(3, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
-  object(4, `<< /Title ${pdfString(title)} /Producer (Open Screenshot Generator) /CreationDate (${pdfDate(new Date())}) >>`);
+  object(4, `<< /Title ${pdfString(title)} /Producer (tiger screen shot) /CreationDate (${pdfDate(new Date())}) >>`);
 
   pages.forEach((page, index) => {
     const pageId = pageIds[index];

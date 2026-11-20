@@ -25,8 +25,8 @@ import type { SiteDraft, SiteFile, SitePage, SiteShot } from './types';
 
 /** Written into every published site, and read back to tell a repository the app made from somebody else's. */
 export const SITE_MARKER = 'osg-site.json';
-export const GENERATOR = 'Open Screenshot Generator';
-export const GENERATOR_URL = 'https://openscrgen.app';
+export const GENERATOR = 'tiger screen shot';
+export const GENERATOR_URL = 'https://github.com/TaigaShinohara/open-screenshot-generator';
 
 // --- addresses ------------------------------------------------------------------------
 

@@ -106,7 +106,7 @@ import {
 } from '@/lib/publish';
 import { AppStoreCredentialsForm, PlayCredentialsForm } from './StoreCredentialsForms';
 
-const DESKTOP_DOWNLOAD_URL = 'https://openscrgen.app';
+const DESKTOP_DOWNLOAD_URL = 'https://github.com/TaigaShinohara/open-screenshot-generator/releases';
 
 /** "Current canvas" plus the store's own sizes, reusing the export presets. */
 const FORMAT_CHOICES: Record<StoreId, DeviceFormat[]> = {

@@ -499,7 +499,7 @@ const ReportSheet = React.forwardRef<HTMLDivElement, { report: PeriodReport; sum
           </p>
         )}
         <p data-pdf-block style={{ margin: '22px 0 0', fontSize: 10, color: MUTED }}>
-          Made with Open Screenshot Generator
+          Made with tiger screen shot
         </p>
       </div>
     );

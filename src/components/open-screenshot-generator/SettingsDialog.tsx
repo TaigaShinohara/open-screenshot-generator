@@ -305,8 +305,8 @@ export function SettingsDialog({ open, onOpenChange, onOpenTips }: SettingsDialo
           {isDiscoverConfigured() && (
             <SettingsSection title="Cloud">
               <SettingsRow
-                label="Save to your cloud automatically"
-                description="Saves the open project to your cloud a few seconds after you stop editing. Requires sign in"
+                label="Update cloud projects automatically"
+                description="Updates projects you saved to your cloud or opened from your cloud. Requires sign in"
                 htmlFor="settings-cloud-auto-save"
                 control={
                   <Switch
@@ -323,7 +323,7 @@ export function SettingsDialog({ open, onOpenChange, onOpenTips }: SettingsDialo
               It is a fact about that storage rather than about the editor, so it
               lives in the account dialog next to the list of what is in there:
               see AccountDialog.tsx. Two switches side by side both reading
-              "save automatically", for two destinations with opposite defaults,
+              "save automatically", for two different destinations,
               is the likeliest way this gets misread. */}
 
           <UpdatesSection />

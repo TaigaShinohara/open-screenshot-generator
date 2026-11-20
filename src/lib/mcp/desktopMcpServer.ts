@@ -98,7 +98,7 @@ const MCP_STATUS_EVENT = 'abs-mcp-status';
 
 const SERVER_INFO = {
   name: 'open-screenshot-generator',
-  title: 'Open Screenshot Generator',
+  title: 'tiger screen shot',
   version: '0.1.0',
 };
 const DEFAULT_PROTOCOL_VERSION = '2025-06-18';
@@ -313,6 +313,7 @@ export interface McpProjectImage {
 }
 
 export interface McpDesignApi {
+  readonly mutationBlockReason?: string | null;
   /**
    * Lightweight list of every artboard on the canvas. A locale reads that
    * language's projection, where the only thing that can differ is the element
@@ -3232,7 +3233,7 @@ export async function handleMcpMessage(
         capabilities: { tools: { listChanged: false } },
         serverInfo: SERVER_INFO,
         instructions:
-          'Open Screenshot Generator design tools. Use list_artboards to discover ids, then build a screen with add_elements (one batched call per board, back to front) and refine with update_element. ' +
+          'tiger screen shot design tools. Use list_artboards to discover ids, then build a screen with add_elements (one batched call per board, back to front) and refine with update_element. ' +
           'A set of store screenshots normally starts from one finished board plus duplicate_artboard. ' +
           'Send an image through upload_asset once and reuse the asset: reference; check fontFamily against list_fonts; use reorder_element rather than rebuilding a board to fix stacking; ' +
           'and while iterating call export_png with scale 0.25, keeping full-size or export_all for the final delivery. ' +
@@ -3249,11 +3250,15 @@ export async function handleMcpMessage(
       if (!tool) return rpcError(id, -32602, `Unknown tool: ${name}`);
       if (!api) {
         return rpcResult(id, {
-          content: [{ type: 'text', text: 'Open Screenshot Generator is not ready yet. Try again in a moment.' }],
+          content: [{ type: 'text', text: 'tiger screen shot is not ready yet. Try again in a moment.' }],
           isError: true,
         });
       }
       const args = params?.arguments ?? {};
+      const blocked = api.mutationBlockReason;
+      if (!READ_ONLY_TOOLS.has(name!) && typeof blocked === 'string' && blocked) {
+        return rpcResult(id, { content: [{ type: 'text', text: blocked }], isError: true });
+      }
       // The one place every call passes, so no tool can be missed. Rust's word
       // on the process, or the page's on the chat, is enough to turn it on.
       if (ctx.agent && (ctx.folders === true || webLinksOff(api)) && hasWebLink(args)) {

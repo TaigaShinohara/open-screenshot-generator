@@ -22,7 +22,7 @@ export function Logo({ className, withBackground = false }: LogoProps) {
     <svg
       viewBox="0 0 512 512"
       role="img"
-      aria-label="Open Screenshot Generator logo"
+      aria-label="tiger screen shot logo"
       className={cn("shrink-0", className)}
     >
       {withBackground && (

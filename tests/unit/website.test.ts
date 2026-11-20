@@ -724,6 +724,14 @@ test('a first publish stopped right after the repository was made is finished by
   assert.deepEqual(github.paths('pebble'), SITE_FILES.map((file) => file.path).sort());
 });
 
+test('an interrupted publish from the original app can finish after the rebrand', async () => {
+  const github = memoryGithub();
+  github.make('pebble', 'The website of Pebble, made with Open Screenshot Generator', ['README.md']);
+  const outcome = await publishSite({ ...PUBLISH, fetchImpl: github.fetchImpl });
+  assert.equal(outcome.created, false);
+  assert.deepEqual(github.paths('pebble'), SITE_FILES.map((file) => file.path).sort());
+});
+
 test("a repository is finished only when the app made it and nothing else is in it", async () => {
   for (const [description, paths] of [
     ['My own repository', ['README.md']],

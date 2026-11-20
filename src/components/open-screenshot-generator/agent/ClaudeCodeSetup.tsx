@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 import type { AgentDetectionState, ClaudeDetection } from '@/lib/claudeCode/types';
 
 export const CLAUDE_CODE_INSTALL_URL = 'https://code.claude.com/docs/en/quickstart';
-export const DESKTOP_DOWNLOAD_URL = 'https://openscrgen.app';
+export const DESKTOP_DOWNLOAD_URL = 'https://github.com/TaigaShinohara/open-screenshot-generator/releases';
 
 export type ClaudeCodeReadiness = 'unknown' | 'checking' | 'ready' | 'missing' | 'signed-out' | 'sandboxed' | 'broken';
 
@@ -166,7 +166,7 @@ export function ClaudeCodeSetup({
         <AlertTitle>Not available in this version</AlertTitle>
         <AlertDescription className="space-y-2">
           <p>
-            The Mac App Store version cannot start other programs. The version from openscrgen.app can run
+            The Mac App Store version cannot start other programs. The desktop build can run
             Claude Code.
           </p>
           <button
@@ -174,7 +174,7 @@ export function ClaudeCodeSetup({
             onClick={() => onOpenLink(DESKTOP_DOWNLOAD_URL)}
             className="inline-flex items-center gap-1 text-primary hover:underline"
           >
-            Get it from openscrgen.app
+            View desktop releases
             <ExternalLink className="h-3 w-3" />
           </button>
         </AlertDescription>

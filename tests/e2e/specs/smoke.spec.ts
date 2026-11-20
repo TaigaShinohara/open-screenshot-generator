@@ -11,7 +11,7 @@ test.describe('editor boot', () => {
     await expect(dialog.getByRole('tab', { name: /App Screenshots/ })).toBeVisible();
   });
 
-  test('the editor chrome hydrates once the start dialog is out of the way', async ({ app }) => {
+  test('the editor chrome hydrates once the start dialog is out of the way', async ({ app, page }, testInfo) => {
     // Radix marks everything outside an open modal aria-hidden, so a
     // role-based locator cannot see the editor until the dialog closes. That
     // is correct behaviour, and it is why this asserts after, not before.
@@ -26,6 +26,13 @@ test.describe('editor boot', () => {
     await expect(app.dockTab('Versions')).toBeVisible();
     await expect(app.selectionTool).toBeVisible();
     await expect(app.undoButton).toBeVisible();
+    await expect(page.getByText('tiger screen shot', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'About', exact: true }).click();
+    const about = page.getByRole('dialog', { name: 'tiger screen shot', exact: true });
+    await expect(about).toContainText('by Idrees Khan, under the MIT license.');
+    await expect(about.getByRole('button', { name: 'Open Screenshot Generator', exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('tiger-about.png') });
+    await about.getByRole('button', { name: 'Close', exact: true }).last().click();
   });
 
   test('the + lists every way to start a design, each with what it makes', async ({ app, page }) => {
@@ -76,7 +83,7 @@ test.describe('editor boot', () => {
     // optional.
     await app.startBlankProject();
     await expect(app.artboards.first()).toBeVisible();
-    expect(await page.title()).toContain('Open Screenshot Generator');
+    expect(await page.title()).toContain('tiger screen shot');
   });
 });
 

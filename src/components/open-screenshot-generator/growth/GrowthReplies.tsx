@@ -381,7 +381,7 @@ function AlertsPanel() {
   const test = async () => {
     setState({ busy: true, message: null, tone: 'ok' });
     try {
-      await postToSlack(webhook, `Growth in Open Screenshot Generator will post new reviews of ${view.app.id ? view.app.name : 'your apps'} here.`);
+      await postToSlack(webhook, `Growth in tiger screen shot will post new reviews of ${view.app.id ? view.app.name : 'your apps'} here.`);
       setState({ busy: false, message: 'Sent. Look for the message in Slack', tone: 'ok' });
     } catch (error) {
       setState({ busy: false, message: error instanceof Error ? error.message : 'Slack did not take the message', tone: 'error' });

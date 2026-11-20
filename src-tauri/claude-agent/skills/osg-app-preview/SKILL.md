@@ -1,7 +1,7 @@
 ---
 name: osg-app-preview
 description: >-
-  How App Preview video boards work in Open Screenshot Generator: preview scenes, the user's
+  How App Preview video boards work in tiger screen shot: preview scenes, the user's
   screen recording, animation timing and the App Store rules for previews. Load it before
   adding or editing a preview board, or when the user asks for a video or an App Preview.
 ---

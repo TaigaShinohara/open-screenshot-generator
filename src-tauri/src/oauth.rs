@@ -60,7 +60,7 @@ background:#0b0d10;color:#e6e8eb}div{text-align:center;line-height:1.6}\
 h1{font-size:1.1rem;font-weight:600;margin:0 0 .25rem}\
 p{margin:0;opacity:.7;font-size:.9rem}</style></head><body><div>\
 <h1>You're signed in</h1><p>You can close this tab and return to \
-Open Screenshot Generator.</p></div></body></html>";
+tiger screen shot.</p></div></body></html>";
 
 fn html_response(body: &'static str) -> Response<std::io::Cursor<Vec<u8>>> {
     let mut response = Response::from_string(body);

@@ -163,12 +163,9 @@ export async function bottomBarBoxes(page: Page): Promise<{
       const r = el.getBoundingClientRect();
       return { x: r.x, y: r.y, width: r.width, height: r.height };
     };
-    // The selection/undo/zoom group, centred on the canvas, and the zoom pill
-    // pinned to the bottom right. Located by their positioning classes because
-    // neither container carries a name of its own.
     return {
-      tools: box(document.querySelector('div.absolute.bottom-4.left-1\\/2')),
-      zoom: box(document.querySelector('div.absolute.bottom-4.right-4')),
+      tools: box(document.querySelector('[data-canvas-tools]')),
+      zoom: box(document.querySelector('[data-canvas-zoom]')),
     };
   });
 }
@@ -176,8 +173,7 @@ export async function bottomBarBoxes(page: Page): Promise<{
 /**
  * True when the canvas tool bar and the zoom pill are on top of each other.
  *
- * They are laid out independently, one centred and one pinned right, so
- * whether they collide is purely a function of how wide the canvas is.
+ * Both groups share a wrapping row whose height also positions the timeline.
  */
 export async function canvasBottomBarsOverlap(page: Page): Promise<boolean> {
   const { tools, zoom } = await bottomBarBoxes(page);

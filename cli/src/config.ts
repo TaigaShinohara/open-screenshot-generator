@@ -66,6 +66,8 @@ export interface OsgConfig {
   screenshots?: string;
   /** Template slug to start from, or 'auto' to rank and pick. */
   template?: string;
+  /** Local template catalog. When set, fill reads only this directory. */
+  templatesDir?: string;
   /** Size preset ids to render, e.g. ['ios-6-3', 'ipad-13']. */
   formats?: string[];
   /** Locale codes. The first is the base unless baseLocale says otherwise. */
