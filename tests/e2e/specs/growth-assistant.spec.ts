@@ -207,8 +207,8 @@ test.describe('the Ask AI assistant', () => {
       await expect(view.getByText('Can I press "Generate"?')).toBeVisible();
       await backToEditor(page);
       await expect.poll(async () => (await browser()).visible).toBe(false);
-      await page.getByRole('navigation', { name: 'Views' }).getByRole('button', { name: GROWTH_BUTTON, exact: true }).click();
-      await expect(viewButton(page, GROWTH_BUTTON)).toHaveAttribute('aria-current', 'page');
+      await openGrowth(page);
+      await expect(page.getByRole('navigation', { name: 'Views' }).getByRole('button', { name: 'More tools', exact: true })).toHaveAttribute('aria-current', 'page');
       await expect.poll(async () => (await browser()).visible).toBe(true);
 
       // Closing the browser from its toolbar closes it in Rust too.

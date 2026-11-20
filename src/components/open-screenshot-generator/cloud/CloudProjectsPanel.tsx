@@ -37,6 +37,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
+import { useEditorPreference } from '@/lib/editorPreferences';
 import { formatBytes } from '@/lib/account/projectBundle';
 import {
   buildShareUrl,
@@ -92,6 +93,7 @@ export function CloudProjectsPanel({
   onOpened,
 }: CloudProjectsPanelProps) {
   const { toast } = useToast();
+  const [cloudAutoSave] = useEditorPreference('cloudAutoSave');
   const [projects, setProjects] = useState<CloudProject[] | null>(null);
   const [limit, setLimit] = useState(0);
   const [isListing, setIsListing] = useState(false);
@@ -251,7 +253,13 @@ export function CloudProjectsPanel({
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{activeProjectName}</p>
               <p className="text-xs text-muted-foreground">
-                {activeIsSaved ? 'Already here, and kept up to date on its own' : 'Not up here yet. It goes up on its own, or press Save'}
+                {activeIsSaved
+                  ? cloudAutoSave
+                    ? 'Already here, and kept up to date automatically'
+                    : 'Saved here. Press Update to send newer edits, or turn on auto save in Settings'
+                  : cloudAutoSave
+                    ? 'Not up here yet. It goes up automatically, or press Save'
+                    : 'Only on this device. Press Save to put a copy in the cloud'}
               </p>
             </div>
             <Button size="sm" onClick={onSave} disabled={isSaving}>
@@ -296,8 +304,9 @@ export function CloudProjectsPanel({
 
         {!error && projects?.length === 0 && (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            Nothing here yet. The project you have open goes up on its own shortly after you
-            work on it, or send it now with Save.
+            {cloudAutoSave
+              ? 'Nothing here yet. The project you have open goes up automatically shortly after you work on it, or send it now with Save.'
+              : 'Nothing here yet. Projects stay on this device until you press Save or turn on automatic cloud save in Settings.'}
           </p>
         )}
 

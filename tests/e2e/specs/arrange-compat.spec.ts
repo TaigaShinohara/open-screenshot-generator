@@ -26,6 +26,7 @@ test.describe('projects made before grouping existed', () => {
   test('a shipped template opens with its layers exactly where it left them', async ({ app, page }) => {
     // A real multi-board template, which is what an existing user's project
     // looks like: dozens of layers laid out by hand, none of them grouped.
+    await app.openTemplatesInStartDialog();
     const dialog = app.startDialog;
     await dialog.getByRole('tab', { name: /App Screenshots/ }).click();
     const card = dialog.getByAltText(TEMPLATE, { exact: true });

@@ -2,12 +2,15 @@ import { test, expect } from '../fixtures/test';
 import { expectBoardSize } from '../helpers/canvas';
 
 test.describe('editor boot', () => {
-  test('an empty database opens the start dialog with all three ways in', async ({ app }) => {
+  test('an empty database opens the start dialog on the AI agent with More ways to start', async ({ app }) => {
     const dialog = app.startDialog;
     await expect(dialog).toBeVisible();
+    await expect(dialog.getByText('Design with the AI agent')).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'More ways to start', exact: true })).toBeVisible();
+    await app.openTemplatesInStartDialog();
+    await expect(dialog.getByRole('button', { name: /Back to AI agent/i })).toBeVisible();
     await expect(dialog.getByRole('button', { name: /Start with a blank canvas/i })).toBeVisible();
     await expect(dialog.getByRole('button', { name: /Drop your screenshots/i })).toBeVisible();
-    await expect(dialog.getByRole('button', { name: /Start with the AI agent/i })).toBeVisible();
     await expect(dialog.getByRole('tab', { name: /App Screenshots/ })).toBeVisible();
   });
 

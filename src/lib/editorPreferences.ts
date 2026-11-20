@@ -31,35 +31,44 @@ export type EditorPreference =
   | 'wheelZoom'
   /** Draw Apple's art safe area over App Store header and search artboards. */
   | 'creativeSafeArea'
+  /** Draw Apple's shape and Android's safe circle over the app icon artboard. */
+  | 'appIconGuides'
   /** Ask before closing a tab whose project was edited since it opened. */
   | 'confirmTabClose'
   /** Desktop: look for a new version of the app in the background. */
   | 'updatesAutoCheck'
   /** Desktop: take beta versions of the app as well as stable ones. */
-  | 'updatesBeta';
+  | 'updatesBeta'
+  /** Show advanced canvas and layout controls by default. */
+  | 'detailedEditor';
 
 const KEYS: Record<EditorPreference, string> = {
   cloudAutoSave: 'open-screenshot-generator.cloud-auto-save',
   accountAutoSync: 'open-screenshot-generator.account-auto-sync',
   wheelZoom: 'open-screenshot-generator.wheel-zoom',
   creativeSafeArea: 'open-screenshot-generator.creative-safe-area',
+  appIconGuides: 'open-screenshot-generator.app-icon-guides',
   confirmTabClose: 'open-screenshot-generator.confirm-tab-close',
   updatesAutoCheck: 'open-screenshot-generator.updates-auto-check',
   updatesBeta: 'open-screenshot-generator.updates-beta',
+  detailedEditor: 'open-screenshot-generator.detailed-editor',
 };
 
 /**
  * What each switch does before anybody has an opinion.
  *
- * Cloud auto save is ON, and is the whole point of that feature: a copy in the
- * cloud that only exists once somebody remembers to ask for one is a copy most
- * people never have. Wheel zoom is on because a wheel is the control people
- * reach for to zoom, and a trackpad is never treated as one (see CanvasArea).
+ * Cloud auto save is OFF by default so projects stay local on this device
+ * until the user explicitly saves to the cloud or opts in. Wheel zoom is on
+ * because a wheel is the control people reach for to zoom, and a trackpad is
+ * never treated as one (see CanvasArea).
  *
  * Syncing to the user's own storage is OFF, and the asymmetry is deliberate
- * rather than cautious. Our cloud is ours to fill; a person's Drive quota,
- * their bandwidth and their permanent gist commit history are theirs, and
- * writing to them unattended is a thing to be asked for rather than assumed.
+ * rather than cautious: a person's Drive quota, their bandwidth and their
+ * permanent gist commit history are theirs, and writing to them unattended is
+ * a thing to be asked for rather than assumed.
+ *
+ * The app icon's guides are on for the same reason: a corner Apple rounds off
+ * and the part an Android circle cuts look like part of the icon on the canvas.
  *
  * The safe area guide is on: some devices show far less of a header than an
  * iPhone does, and the guide is the only place that says so while you design.
@@ -71,15 +80,20 @@ const KEYS: Record<EditorPreference, string> = {
  * to look for it is one most people never get. It only ever downloads; the
  * restart is still the user's to choose. Beta versions are off, because they
  * are the ones that have not been through everybody's hands yet.
+ *
+ * Detailed editor mode is OFF by default so the workspace stays calm and
+ * focused on the core screenshot flow.
  */
 const DEFAULTS: Record<EditorPreference, boolean> = {
-  cloudAutoSave: true,
+  cloudAutoSave: false,
   accountAutoSync: false,
   wheelZoom: true,
   creativeSafeArea: true,
+  appIconGuides: true,
   confirmTabClose: true,
   updatesAutoCheck: true,
   updatesBeta: false,
+  detailedEditor: false,
 };
 
 const cache = new Map<EditorPreference, boolean>();

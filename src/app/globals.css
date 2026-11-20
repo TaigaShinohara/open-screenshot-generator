@@ -25,36 +25,36 @@ body {
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 15%;
 
-    --primary: 182 25% 49.6%; /* Slate Blue 5F9EA0 */
+    --primary: 182 32% 36%; /* Deep Slate Blue for >=4.5:1 contrast with white text */
     --primary-foreground: 0 0% 100%; /* White text on slate blue */
 
     --secondary: 0 0% 92%; /* Lighter Gray for secondary elements */
     --secondary-foreground: 0 0% 15%;
 
     --muted: 0 0% 92%;
-    --muted-foreground: 0 0% 40%;
+    --muted-foreground: 0 0% 38%;
 
     --accent: 45 62% 52%; /* Warm Gold D4AF37 */
     --accent-foreground: 0 0% 15%; /* Dark text on gold */
 
-    --destructive: 0 84.2% 60.2%;
+    --destructive: 0 72% 45%;
     --destructive-foreground: 0 0% 98%;
 
     --border: 0 0% 80%;
     --input: 0 0% 95%; /* Lighter than background for input fields */
-    --ring: 182 25% 49.6%; /* Primary for ring */
+    --ring: 182 32% 36%; /* Primary for ring */
 
     --radius: 0.5rem;
 
     /* Sidebar specific colors - using a subtle version of primary */
     --sidebar-background: 182 20% 96%; /* Very light slate blue */
     --sidebar-foreground: 182 25% 20%; /* Darker slate blue for text */
-    --sidebar-primary: 182 25% 49.6%; /* Slate Blue (main primary) */
+    --sidebar-primary: 182 32% 36%; /* Slate Blue (main primary) */
     --sidebar-primary-foreground: 0 0% 100%; /* White */
     --sidebar-accent: 182 20% 90%; /* Lighter slate for hover */
     --sidebar-accent-foreground: 182 25% 15%; /* Darker slate for hover text */
     --sidebar-border: 182 20% 85%;
-    --sidebar-ring: 182 25% 49.6%; /* Primary for ring */
+    --sidebar-ring: 182 32% 36%; /* Primary for ring */
 
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
@@ -95,6 +95,14 @@ body {
     --growth-tag-6: 120 100% 26%;
     --growth-tag-7: 248 62% 58%;
     --growth-tag-8: 0 73% 59%;
+    /* Store compliance: the shield's green, and the four levels of a rule or a
+       deadline. Each is a text colour, drawn on its own 12% tint, and reads at
+       4.5:1 or more on the card, the tint, the grey ground and a muted row. */
+    --rules-accent: 160 72% 25%;
+    --rules-critical: 0 72% 40%;
+    --rules-high: 21 90% 34%;
+    --rules-medium: 36 92% 28%;
+    --rules-low: 215 16% 38%;
   }
 
   /* Dark editor chrome. Same roles as the light palette above, same slate blue
@@ -175,6 +183,12 @@ body {
     --growth-tag-6: 120 100% 26%;
     --growth-tag-7: 247 69% 72%;
     --growth-tag-8: 0 72% 65%;
+    /* The same, lighter for the dark card (4.8:1 or more on its tint). */
+    --rules-accent: 156 60% 55%;
+    --rules-critical: 0 85% 72%;
+    --rules-high: 24 92% 65%;
+    --rules-medium: 43 90% 60%;
+    --rules-low: 215 18% 68%;
   }
 
   /* The tokens alone are not enough: an artboard also has to opt out of the
@@ -609,6 +623,47 @@ html[data-growth-browser] [data-toast-viewport] {
 
 @media (prefers-reduced-motion: reduce) {
   .growth-shimmer {
+    animation: none;
+  }
+}
+
+/* The Every device view (devices/EveryDeviceDialog.tsx): when the device
+   changes, an artboard's preview stays mounted, so its size and every layer's
+   box glide to the new layout instead of jumping. Text size glides with them. */
+.osg-morph,
+.osg-morph > div,
+.osg-morph [data-artboard-surface],
+.osg-morph [data-artboard-surface] > * {
+  transition-property: width, height, left, top, transform;
+  transition-duration: 520ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+.osg-morph [data-artboard-surface] > * * {
+  transition-property: font-size;
+  transition-duration: 520ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .osg-morph,
+  .osg-morph * {
+    transition: none !important;
+  }
+}
+
+/* The app icon window's Android preview: the front layer drifts over the back,
+   the way a launcher nudges an adaptive icon. Still for anyone who asked the
+   system for less motion. */
+@keyframes osg-icon-drift {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(3%, -2%); }
+  50% { transform: translate(-2%, 3%); }
+  75% { transform: translate(-3%, -1.5%); }
+}
+.osg-icon-drift {
+  animation: osg-icon-drift 7s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .osg-icon-drift {
     animation: none;
   }
 }

@@ -61,14 +61,6 @@ test.describe('the canvas bottom bars', () => {
   });
 
   test('keep out of each other at tablet and small laptop widths too', async ({ app, page }) => {
-    // Expected to fail: this documents a defect that is still in the app, and
-    // it reports loudly the moment somebody fixes it. The fix is a breakpoint,
-    // not a layout: the tool bar's `max-md:` escape hatch needs to fire at the
-    // width where the collision actually starts, around `lg` or `xl`.
-    // Declared inside the test on purpose. At describe level it would leak on
-    // to every test after it.
-    test.fail();
-
     await app.startBlankProject();
 
     for (const size of CRAMPED) {

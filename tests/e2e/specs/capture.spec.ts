@@ -18,7 +18,7 @@ import { put, waitForProject, type StoredProject } from '../fixtures/db';
 test.use({ actionTimeout: 30_000 });
 test.describe.configure({ timeout: 180_000 });
 
-const CAPTURE_BUTTON = 'Capture: screenshots of your app';
+const CAPTURE_BUTTON = 'Capture screenshots of your app';
 const GERMAN = 'de-DE';
 
 const SIMULATOR = {
@@ -478,7 +478,7 @@ test.describe('capture', () => {
     // Beta has the same frame ids as Alpha, and opens in a new tab while Alpha's recording runs.
     await view.getByRole('button', { name: 'Back to the editor', exact: true }).click();
     await strip(page).getByRole('button', { name: 'New tab', exact: true }).click();
-    await app.waitForStartDialogReady();
+    await app.openTemplatesInStartDialog();
     await app.startDialog.getByText('Beta', { exact: true }).click();
     await expect(app.startDialog).toBeHidden();
     await expect(strip(page).locator('[role="tab"][aria-selected="true"]')).toContainText('Beta');

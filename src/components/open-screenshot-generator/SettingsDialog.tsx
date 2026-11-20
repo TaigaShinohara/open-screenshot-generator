@@ -210,7 +210,9 @@ export function SettingsDialog({ open, onOpenChange, onOpenTips }: SettingsDialo
   const [autoSaveToCloud, setAutoSaveToCloud] = useEditorPreference('cloudAutoSave');
   const [wheelZoom, setWheelZoom] = useEditorPreference('wheelZoom');
   const [creativeSafeArea, setCreativeSafeArea] = useEditorPreference('creativeSafeArea');
+  const [appIconGuides, setAppIconGuides] = useEditorPreference('appIconGuides');
   const [confirmTabClose, setConfirmTabClose] = useEditorPreference('confirmTabClose');
+  const [detailedEditor, setDetailedEditor] = useEditorPreference('detailedEditor');
   const contentRef = useRef<HTMLDivElement>(null);
 
   // localStorage is only readable after mount, and the wizard's own checkbox
@@ -264,6 +266,18 @@ export function SettingsDialog({ open, onOpenChange, onOpenTips }: SettingsDialo
 
           <SettingsSection title="Canvas">
             <SettingsRow
+              label="Show detailed editor controls"
+              description="Keeps advanced layout and inspector controls visible by default"
+              htmlFor="settings-detailed-editor"
+              control={
+                <Switch
+                  id="settings-detailed-editor"
+                  checked={detailedEditor}
+                  onCheckedChange={setDetailedEditor}
+                />
+              }
+            />
+            <SettingsRow
               label="Zoom with the mouse wheel"
               description="Scroll the mouse wheel to zoom. Trackpad scrolling stays the same. Ctrl or Cmd with the wheel always zooms"
               htmlFor="settings-wheel-zoom"
@@ -282,6 +296,12 @@ export function SettingsDialog({ open, onOpenChange, onOpenTips }: SettingsDialo
                   onCheckedChange={setCreativeSafeArea}
                 />
               }
+            />
+            <SettingsRow
+              label="Show the guides on the app icon"
+              description="Outlines Apple's icon shape and the circle no Android phone cuts into on the app icon artboard. Never exported"
+              htmlFor="settings-app-icon-guides"
+              control={<Switch id="settings-app-icon-guides" checked={appIconGuides} onCheckedChange={setAppIconGuides} />}
             />
           </SettingsSection>
 
@@ -306,7 +326,7 @@ export function SettingsDialog({ open, onOpenChange, onOpenTips }: SettingsDialo
             <SettingsSection title="Cloud">
               <SettingsRow
                 label="Save to your cloud automatically"
-                description="Saves the open project to your cloud a few seconds after you stop editing. Requires sign in"
+                description="Saves the open project to your cloud a few seconds after you stop editing. Off by default; projects stay on this device until you turn this on or press Save"
                 htmlFor="settings-cloud-auto-save"
                 control={
                   <Switch

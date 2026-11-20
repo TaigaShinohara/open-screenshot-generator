@@ -175,8 +175,14 @@ import {
   creativeSpecForPreset,
   creativeSummary,
   isCreativeBoard,
+  isScreenshotBoard,
   screenshotBoards,
 } from '@/lib/creative/specs';
+import { iconBoards, iconSettings, isIconBoard, projectIconBoard, withLayersInOrder } from '@/lib/appIcon/specs';
+import { saveIconFolder, saveIconZip, scanIconProject, writeIconProject } from '@/lib/appIcon/projectWrite';
+import { AppIconStudioDialog, type IconCaptureUrls } from './appIcon/AppIconStudioDialog';
+import { AppIconLiveCard } from './appIcon/AppIconLiveCard';
+import { AppIconActionsContext } from './appIcon/AppIconBoardBadge';
 import {
   boardFacesMissing,
   boardFacesPending,
@@ -210,17 +216,30 @@ import {
 import { McpServerStatus } from './McpServerStatus';
 import { agentUsableTemplates } from '@/lib/ai/templateCatalog';
 import { loadProjectTemplates } from '@/services/projectService';
-import { TEMPLATE_CATEGORIES } from '@/lib/templateCategories';
-import { convertArtboardsToFormat, detectArtboardsFormat, swapDeviceInElements, scaleElementsToCanvas, DEVICE_FORMAT_PRESETS, type DeviceFormat, type DeviceFormatPreset } from '@/lib/deviceRegistry';
+import { TEMPLATE_CATEGORIES, type TemplateCategory } from '@/lib/templateCategories';
+import { detectArtboardsFormat, swapDeviceInElements, scaleElementsToCanvas, DEVICE_FORMAT_PRESETS, type DeviceFormat, type DeviceFormatPreset } from '@/lib/deviceRegistry';
+import { boardsOnDevice, mirrorSetFormats, ownFormatOf, projectForDevice, projectSetFormats, type PlanCache } from '@/lib/deviceSets/sets';
+import { facesReady, measureText } from '@/lib/deviceSets/measure';
+import { deviceSetTarget } from '@/lib/deviceSets/targets';
+import { EveryDeviceDialog } from './devices/EveryDeviceDialog';
 import { PublishDialog } from './publish/PublishDialog';
 import { GrowthWorkspace, type GrowthRequest } from './growth/GrowthWorkspace';
 import { CaptureWorkspace, type CaptureRequest, type ClipOutcome } from './capture/CaptureWorkspace';
 import { WebsiteWorkspace, type CaptureRequest as WebsiteCaptureRequest, type CapturedBoard } from './website/WebsiteWorkspace';
+import { StoreComplianceWorkspace } from './storeCompliance/StoreComplianceWorkspace';
+import { CutoutWorkspace, type CutoutRequest } from './cutout/CutoutWorkspace';
+import { placementProps } from './cutout/CustomPaletteTab';
+import { markLibraryImagePlaced, refOf, type LibraryImageRow } from '@/lib/cutout/library';
+import { deleteMyImageForMcp, listMyImagesForMcp, removeBackgroundForMcp, saveToMyImagesForMcp } from '@/lib/cutout/mcp';
+import { detectCutout, getCutoutStatus } from '@/lib/cutout/engine';
+import { megabytes } from '@/lib/cutout/models';
+import { CUSTOM_PREFIX, customLibraryId } from '@/lib/libraryIds';
 import { flushWebsiteSaves } from '@/lib/website/store';
 import { captureTargets } from '@/lib/capture/frames';
 import { placeClip, placeShots, type ClipPlacement, type ShotPlacement } from '@/lib/capture/place';
 import { deviceForQuickCapture, shootDevice } from '@/lib/capture/shoot';
-import { ActivityBar, type ActivityId } from './ActivityBar';
+import { ActivityBar, BAR_INSET, type ActivityId } from './ActivityBar';
+import { ExportSummaryCard, type ExportSummaryData } from './ExportSummaryCard';
 import { getGrowthSettings, setGrowthSettings } from '@/lib/growth/settings';
 import { useGrowthMonitor } from '@/lib/growth/useGrowthMonitor';
 import { storeOf } from '@/lib/growth/stores';
@@ -422,7 +441,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Trash2Icon } from 'lucide-react';
 import { readElementClipboard, useElementClipboard, writeElementClipboard } from '@/lib/elementClipboard';
-import { readPreference, writePreference } from '@/lib/editorPreferences';
+import { readPreference, useEditorPreference, writePreference } from '@/lib/editorPreferences';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -653,18 +672,29 @@ async function fetchRecentProjectMetas(): Promise<Project[]> {
   }));
 }
 
+/**
+ * Store sizes no phone shares, so a project of that size is that device's.
+ * The phone sizes are left to the frames, as a blank 1206×2622 canvas has no
+ * device yet and a 1080×1920 one may be a phone or a 7-inch tablet.
+ */
+const SIZE_DECIDES_FORMAT: ReadonlySet<DeviceFormat> = new Set<DeviceFormat>(['ipad-pro-13', 'ipad-11', 'tablet-10', 'mac']);
+
 // Update the function with reduced margin.
 // Also the one place a board's slice of a spanned background picture is
 // derived, because that slice is read off the board order exactly like the
 // position is, and this runs on every commit (see normalizeBackgroundImage).
 function calculateArtboardPositions(artboards: ArtboardState[]): ArtboardState[] {
   let currentX = ARTBOARD_MARGIN;
-  return normalizeBackgroundImage(artboards).map((ab) => {
+  // Also where an artboard added later joins the devices the project exports.
+  return normalizeBackgroundImage(mirrorSetFormats(artboards)).map((ab) => {
     const newPosition = { x: currentX, y: ARTBOARD_MARGIN };
     // Calculate next position with reduced margin
     currentX += (ab.size.width * DISPLAY_SCALE_FACTOR) + ARTBOARD_MARGIN;
-    
-    return { ...ab, position: newPosition };
+    // The app icon draws its back layer under its front, as its exports do,
+    // whatever order a change left them in (src/lib/appIcon/specs.ts).
+    const elements = isIconBoard(ab) ? withLayersInOrder(ab.elements) : ab.elements;
+
+    return elements === ab.elements ? { ...ab, position: newPosition } : { ...ab, position: newPosition, elements };
   });
 }
 
@@ -778,8 +808,9 @@ function getInitialProjectIdFromUrl(): string | null {
   return new URLSearchParams(window.location.search).get('projectId');
 }
 
-// The start dialog's first tab. It holds community posts rather than
-// templates, so it is not a TEMPLATE_CATEGORIES entry and carries its own id.
+// The start dialog's Community tab, second after App Screenshots. It holds
+// community posts rather than templates, so it is not a TEMPLATE_CATEGORIES
+// entry and carries its own id.
 const COMMUNITY_TAB_ID = 'community';
 
 /**
@@ -788,7 +819,7 @@ const COMMUNITY_TAB_ID = 'community';
  * A build-time constant, so a fork of this repo with no VPS gets an editor with
  * no Discover in it rather than one whose compass button opens a dialog that
  * can only say "unavailable". Every entry point below reads this: the rail
- * button, the start dialog's first tab, the toolbar's Share, and the action on
+ * button, the start dialog's Community tab, the toolbar's Share, and the action on
  * the export toast.
  */
 const HAS_DISCOVER = isDiscoverConfigured();
@@ -1165,11 +1196,11 @@ export function OpenScreenshotGeneratorLayout() {
   const [collabInvite, setCollabInvite] = useState<CollabInvite | null>(null);
   /** Which project the open room belongs to, so switching project leaves it. */
   const collabProjectRef = useRef<string | null>(null);
-  // Which screen of the start dialog is showing. The template gallery is the
-  // dialog, as it always was; the agent is a screen you step into from the
-  // banner above it. Reset on open so reopening never lands mid-agent-flow.
+  // Which screen of the start dialog is showing. Opens on the AI agent by
+  // default so users can drop screenshots and generate a full set in one step,
+  // with "More ways to start" leading to templates, quick start and recent projects.
   const [dialogView, setDialogView] = useState<'templates' | 'agent' | 'quickstart' | 'graphics'>(
-    'templates'
+    'agent'
   );
   // Latches once the quick start has been opened, so it can stay mounted behind
   // the other views without being built for every session that never uses it.
@@ -1190,14 +1221,14 @@ export function OpenScreenshotGeneratorLayout() {
   // view and reads as a dead end.
   const [agentReturnView, setAgentReturnView] = useState<'templates' | 'quickstart'>('templates');
   /**
-   * Opens the start dialog on a given view, defaulting to the template gallery.
+   * Opens the start dialog on a given view, defaulting to the AI agent.
    *
    * Every open goes through here rather than flipping `isTemplateSelectorOpen`
    * on its own: the dialog keeps whichever view it was closed on, so reopening
    * it from the toolbar used to land mid-flow — on the quick start screen, say,
    * with Back the only way out — instead of at the start it was asked for.
    */
-  const openStartDialog = useCallback((view: 'templates' | 'quickstart' | 'graphics' = 'templates') => {
+  const openStartDialog = useCallback((view: 'agent' | 'templates' | 'quickstart' | 'graphics' = 'agent') => {
     setDialogView(view);
     setAgentReturnView('templates');
     setIsTemplateSelectorOpen(true);
@@ -1238,7 +1269,7 @@ export function OpenScreenshotGeneratorLayout() {
   // tips wizard now that it is a section in here rather than its own button.
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   // Discover, the community feed. Reachable from the palette rail, from the
-  // start dialog's first tab, from the toolbar, and by a ?post= link, which is
+  // start dialog's Community tab, from the toolbar, and by a ?post= link, which is
   // what Copy link on a post hands out.
   const [isDiscoverOpen, setIsDiscoverOpen] = useState(() => getInitialPostIdFromUrl() !== null);
   const [discoverPostId, setDiscoverPostId] = useState<string | null>(() =>
@@ -1247,11 +1278,10 @@ export function OpenScreenshotGeneratorLayout() {
   // Which screen the feed opens on. 'share' is how the toolbar button and the
   // "share these" action on the export toast skip straight to the share form.
   const [discoverIntent, setDiscoverIntent] = useState<'feed' | 'share'>('feed');
-  // The start dialog opens on the community tab: a finished listing somebody
-  // shipped is a better answer to "what should mine look like" than a grid of
-  // empty templates, and the templates are one tab away.
+  // The start dialog opens on its first tab, App Screenshots. Community is the
+  // next tab along.
   const [templateTab, setTemplateTab] = useState<string>(
-    HAS_DISCOVER ? COMMUNITY_TAB_ID : (TEMPLATE_CATEGORIES[0]?.id ?? COMMUNITY_TAB_ID)
+    TEMPLATE_CATEGORIES[0]?.id ?? COMMUNITY_TAB_ID
   );
   const [availableProjects, setAvailableProjects] = useState<Project[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
@@ -1613,6 +1643,17 @@ export function OpenScreenshotGeneratorLayout() {
     setIsPreviewOpen(true);
   }, []);
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  const [exportSummary, setExportSummary] = useState<ExportSummaryData | null>(null);
+  const [detailedEditor] = useEditorPreference('detailedEditor');
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+  useEffect(() => {
+    setIsPaletteOpen(detailedEditor);
+  }, [detailedEditor]);
+  useEffect(() => {
+    setExportSummary(null);
+  }, [activeProjectId]);
+  // The Every device view: the design laid out for every store size.
+  const [isEveryDeviceOpen, setIsEveryDeviceOpen] = useState(false);
   // Direct-to-store upload (App Store Connect / Google Play). Desktop only,
   // see src/lib/publish; the dialog explains itself on the web build.
   const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
@@ -1653,6 +1694,21 @@ export function OpenScreenshotGeneratorLayout() {
   // Mounted on its first visit and kept, like Growth, so a publish goes on
   // while the editor is in front.
   const [websiteMounted, setWebsiteMounted] = useState(false);
+  // Store compliance: the App Store Compliance Playbook, read from GitHub on the
+  // view's first visit (src/lib/storeCompliance). Mounted on that visit and kept,
+  // like Growth, so an answer on its way and the screen's place stay.
+  const [complianceMounted, setComplianceMounted] = useState(false);
+  // Remove background: cutting people and products out of photos, and the
+  // user's own pictures the palette's Custom tab places (src/lib/cutout).
+  // Mounted on its first visit and kept, so a picture being cut carries on
+  // while the editor is in front. A request picks the picture to show.
+  const [cutoutMounted, setCutoutMounted] = useState(false);
+  const [cutoutRequest, setCutoutRequest] = useState<CutoutRequest | null>(null);
+  const showCutout = useCallback((imageId?: string) => {
+    setCutoutMounted(true);
+    setCutoutRequest((current) => ({ imageId, nonce: (current?.nonce ?? 0) + 1 }));
+    setActivity('cutout');
+  }, []);
   // While the desktop app runs, Growth keeps the apps synced there fresh and
   // says when something new turns up (src/lib/growth/monitor.ts). The main
   // window only: a tab window would sync the same apps a second time.
@@ -1766,6 +1822,8 @@ export function OpenScreenshotGeneratorLayout() {
       if (next !== 'growth') {
         if (next === 'capture') setCaptureMounted(true);
         if (next === 'website') setWebsiteMounted(true);
+        if (next === 'compliance') setComplianceMounted(true);
+        if (next === 'cutout') setCutoutMounted(true);
         setActivity(next);
         return;
       }
@@ -1791,6 +1849,11 @@ export function OpenScreenshotGeneratorLayout() {
   // it back once the art is on the canvas.
   const [isCreativeDialogOpen, setIsCreativeDialogOpen] = useState(false);
   const creativeReturnsToStoreRef = useRef(false);
+  // The app icon window (appIcon/AppIconStudioDialog.tsx), the icon it is on,
+  // and whether the live preview over the canvas was closed this sitting.
+  const [isAppIconOpen, setIsAppIconOpen] = useState(false);
+  const [appIconBoardId, setAppIconBoardId] = useState<string | null>(null);
+  const [appIconLiveHidden, setAppIconLiveHidden] = useState(false);
   // Seeds the export dialog's "Selected artboard only" box. The toolbar's
   // Download opens the dialog project-wide; an artboard's own Download opens
   // it already scoped to that board.
@@ -2571,6 +2634,7 @@ export function OpenScreenshotGeneratorLayout() {
   // Assigned in the tab block: the tab session, with the active tab's view,
   // and the agent chat.
   const beforeWindowCloseRef = useRef<() => Promise<unknown>>(() => Promise.resolve());
+  const cutoutFlushRef = useRef<(() => Promise<boolean>) | null>(null);
   // Installing an update ends the process without the close hook below ever
   // running, so Rust asks every editor window to write its edits first, and
   // calls the install off when one cannot (src-tauri/src/updater.rs).
@@ -2748,6 +2812,7 @@ export function OpenScreenshotGeneratorLayout() {
     }
     commitRefusalRef.current = null;
     const repositionedArtboards = calculateArtboardPositions(updatedArtboards);
+    artboardsRef.current = repositionedArtboards;
     setArtboards(repositionedArtboards); // Update React state first
     noteVersionCheckpoint(repositionedArtboards);
     // Into the room, if there is one. A no-op otherwise, and cheap when there
@@ -4020,6 +4085,10 @@ export function OpenScreenshotGeneratorLayout() {
   // The mockup platform and canvas size drive the toolbar's format label and
   // checkmarks. Mixed projects have no active format.
   const activeDeviceFormat = useMemo(() => {
+    // An iPad, tablet or Mac sized project is that device's, whatever frames
+    // it shows: a set made for the iPad can keep its phone frames.
+    const bySize = ownFormatOf(artboards);
+    if (bySize && SIZE_DECIDES_FORMAT.has(bySize)) return bySize;
     const format = detectArtboardsFormat(artboards);
     if (format === 'ios') {
       const largePreset = DEVICE_FORMAT_PRESETS.find((preset) => preset.id === 'ios-large');
@@ -4036,34 +4105,90 @@ export function OpenScreenshotGeneratorLayout() {
     return format === 'mixed' ? null : format;
   }, [artboards]);
 
-  // Convert the whole project to a device format: resize every artboard to
-  // the format's store-correct canvas (content uniformly scaled and
-  // re-centered) and swap mockups to the format's device. One
-  // handleArtboardsUpdate call = one history entry, so undo restores the
+  // Convert the whole project to a device format: every screenshot artboard is
+  // laid out again for the format's store size (src/lib/deviceSets/, with any
+  // layout or screenshot picked for it in the Every device view) and its
+  // mockups swapped to the format's devices. Header and search art keeps
+  // Apple's size; a Watch artboard or a feature graphic is scaled as before.
+  // One handleArtboardsUpdate call = one history entry, so undo restores the
   // previous format exactly.
-  const handleSelectDeviceFormat = (preset: DeviceFormatPreset) => {
-    const { artboards: converted, resized, swapped, skipped } = convertArtboardsToFormat(artboards, preset);
+  const handleSelectDeviceFormat = async (preset: DeviceFormatPreset) => {
+    // Laid out by measuring its text, so the faces it draws in come first.
+    await facesReady(artboardsRef.current);
+    const source = artboardsRef.current;
+    // Laid out the way Every device shows it, every language included, with
+    // what was chosen for the other devices kept.
+    const converted = projectForDevice(source, preset.id, measureText, { keepChoices: true });
+    const resized = converted.filter(
+      (board, index) => board.size.width !== source[index].size.width || board.size.height !== source[index].size.height
+    ).length;
+    const devicesBefore = new Map(
+      source.flatMap((board) => board.elements).filter((el) => el.type === 'device').map((el) => [el.id, (el as DeviceFrameElementProps).deviceType])
+    );
+    const swapped = converted
+      .flatMap((board) => board.elements)
+      .filter((el) => el.type === 'device' && devicesBefore.get(el.id) !== (el as DeviceFrameElementProps).deviceType).length;
     if (resized === 0 && swapped === 0) {
       toast({
         title: "Nothing to convert",
-        description: `Artboards are already ${preset.artboard.width}×${preset.artboard.height} with ${preset.label} mockups${skipped > 0 ? ` (${skipped} generic tablet/desktop/custom mockup(s) left as-is)` : ''}.`,
+        description: `Your screenshots are already ${preset.artboard.width}×${preset.artboard.height} with ${preset.label} devices.`,
       });
       return;
     }
     // Every board resized and every mockup swapped in one commit: undo covers
     // it, but only until the tab is closed.
-    void writeVersion(artboardsRef.current, `Before ${preset.label}`, 'safety');
+    void writeVersion(source, `Before ${preset.label}`, 'safety');
     if (!handleArtboardsUpdate(converted, namedChange(`Convert to ${preset.label}`, 'device'))) return;
     trackDeviceFormatSelected({ format: preset.id, formatLabel: preset.label });
     const parts = [
-      resized > 0 ? `${resized} artboard(s) resized to ${preset.artboard.width}×${preset.artboard.height}` : '',
-      swapped > 0 ? `${swapped} mockup(s) swapped` : '',
-      skipped > 0 ? `${skipped} left as-is (no equivalent)` : '',
+      resized > 0 ? `${resized} screenshot${resized === 1 ? ' is' : 's are'} now ${preset.artboard.width}×${preset.artboard.height}` : '',
+      swapped > 0 ? `${swapped} device${swapped === 1 ? '' : 's'} changed to fit` : '',
     ].filter(Boolean);
     toast({
-      title: `Converted to ${preset.label}`,
-      description: `${parts.join(', ')}. Undo reverts everything.`,
+      title: `Changed to ${preset.label}`,
+      description: `${parts.join(', and ')}. Undo puts everything back.`,
     });
+  };
+
+  // The Every device view writes through the same door as every other edit,
+  // applying its change to the project as it is now: an upload that took a
+  // moment must not undo what was changed meanwhile. A write that began on
+  // another document than the one on the canvas now is turned down.
+  const handleEveryDeviceCommit = (
+    change: (current: ArtboardState[]) => ArtboardState[],
+    label: string,
+    token?: number
+  ) => {
+    if (token !== undefined && token !== canvasSerialRef.current) return false;
+    return !!handleArtboardsUpdate(change(artboardsRef.current), namedChange(label, 'device'));
+  };
+
+  // One device's set as a project of its own, opened in a new tab: the
+  // artboards laid out for the device in every language, free to change.
+  const handleOpenDeviceSetAsProject = async (format: DeviceFormat) => {
+    const target = deviceSetTarget(format);
+    if (!target) return;
+    await facesReady(artboardsRef.current);
+    const projectData = calculateArtboardPositions(projectForDevice(artboardsRef.current, format, measureText));
+    const projectName = `${currentProjectName} (${target.name})`;
+    const projectId = `project_${Date.now()}`;
+    try {
+      await db.projects.put({ id: projectId, name: projectName, timestamp: new Date(), projectData: JSON.parse(JSON.stringify(projectData)) });
+      setRecentProjects(await fetchRecentProjectMetas());
+      const opened = await loadProjectFromData(projectData, projectName, projectId);
+      if (!opened) {
+        toast({
+          title: "The new project couldn't open",
+          description: `"${projectName}" was saved. Open it from Recent projects.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({ title: `"${projectName}" is open`, description: 'Change it however you like. Your first project stays the same.' });
+    } catch (error) {
+      console.error('Could not make the device set project', error);
+      toast({ title: "The new project wasn't made", description: 'Please try again, or export the screenshots instead.', variant: 'destructive' });
+    }
   };
 
   // Add handler for renaming element from layers panel. A layer name is not
@@ -4135,6 +4260,9 @@ export function OpenScreenshotGeneratorLayout() {
     if (artboardComponent && typeof artboardComponent.addElement === 'function') {
       const newElementId = artboardComponent.addElement(type, subType, dropPosition, styleProps);
       if (newElementId) {
+        if (type === 'image' && typeof styleProps?.libraryId === 'string' && styleProps.libraryId.startsWith(CUSTOM_PREFIX)) {
+          void markLibraryImagePlaced(styleProps.libraryId.slice(CUSTOM_PREFIX.length));
+        }
         setSelectedElementIdOnActiveArtboard(newElementId);
         setActiveArtboardId(artboardId);
       }
@@ -4396,13 +4524,14 @@ export function OpenScreenshotGeneratorLayout() {
   }, [activeArtboardId, handleAddElementToArtboard, toast]);
 
   // Get the current size from the first artboard or any active artboard
-  // The canvas size is the screenshots' size. Header and search art has a
-  // fixed size of its own, so with one of those selected the toolbar still
-  // names the screenshots' size, which is what the Canvas Size dialog changes.
+  // The canvas size is the screenshots' size. Header and search art and the
+  // app icon have fixed sizes of their own, so with one of those selected the
+  // toolbar still names the screenshots' size, which is what the Canvas Size
+  // dialog changes.
   const getCurrentArtboardSize = () => {
     if (activeArtboardId) {
       const activeAb = artboards.find(ab => ab.id === activeArtboardId);
-      if (activeAb && !isCreativeBoard(activeAb)) {
+      if (activeAb && isScreenshotBoard(activeAb)) {
         return activeAb.size;
       }
     }
@@ -4428,7 +4557,10 @@ export function OpenScreenshotGeneratorLayout() {
   // already exists, and deleting the last artboard is refused.)
   const handleAddNewArtboardAfter = (currentArtboardId: string | null, options: NewArtboardOptions = {}) => {
     const currentArtboard = artboards.find(ab => ab.id === currentArtboardId);
-    const newSize = currentArtboard ? currentArtboard.size : { ...DEFAULT_CANVAS_SIZE };
+    // A new artboard is a screenshot: after the app icon or header art it
+    // takes the screenshots' size, not that board's own.
+    const sizeFrom = currentArtboard && isScreenshotBoard(currentArtboard) ? currentArtboard : artboards.find(isScreenshotBoard);
+    const newSize = sizeFrom ? { ...sizeFrom.size } : { ...DEFAULT_CANVAS_SIZE };
 
     const newArtboard: ArtboardState = {
       id: `artboard_${Date.now()}`,
@@ -4649,6 +4781,131 @@ export function OpenScreenshotGeneratorLayout() {
   // What the check chip under a header or search artboard can do to it.
   const creativeBoardActions = useMemo(
     () => ({ rebuild: (boardId: string) => rebuildCreativeBoardRef.current(boardId) }),
+    []
+  );
+
+  // --- the app icon (src/lib/appIcon/, appIcon/) -------------------------------
+
+  /** Open the icon window on an icon, the project's first, or its starters when it has none. */
+  const openAppIcon = (boardId: string | null = null) => {
+    setAppIconBoardId(boardId ?? projectIconBoard(artboards)?.id ?? null);
+    setIsAppIconOpen(true);
+  };
+  const openAppIconRef = useRef(openAppIcon);
+  openAppIconRef.current = openAppIcon;
+  // What the chip under the icon artboard can do.
+  const appIconActions = useMemo(() => ({ openStudio: (boardId: string) => openAppIconRef.current(boardId) }), []);
+
+  /** A new icon goes to the front of the canvas: one history entry and one save. The window stays open on it. */
+  const handleAddIconBoard = (board: ArtboardState) => {
+    const landed = handleArtboardsUpdate(
+      normalizeLocalization([board, ...artboards]),
+      namedChange('Add app icon', 'artboard', board.name)
+    );
+    if (!landed) return;
+    setAppIconBoardId(board.id);
+    setAppIconLiveHidden(false);
+    setActiveArtboardId(board.id);
+    setSelectedElementIdOnActiveArtboard(null);
+    revealArtboard(board.id);
+  };
+
+  /** A fix from the icon window to the icon artboard itself. */
+  const handleUpdateIconBoard = (boardId: string, patch: Partial<ArtboardState>, label = 'Change app icon') => {
+    const board = artboards.find((ab) => ab.id === boardId);
+    if (!board) return;
+    handleArtboardsUpdate(
+      artboards.map((ab) => (ab.id === boardId ? { ...ab, ...patch } : ab)),
+      namedChange(label, 'artboard', board.name)
+    );
+  };
+
+  /**
+   * The app's name, typed in the icon window, kept on the icon. A burst of
+   * typing is one history entry, the way a text layer's typing is.
+   */
+  const handleRenameIconApp = (boardId: string, name: string) => {
+    const board = artboards.find((ab) => ab.id === boardId);
+    if (!board) return;
+    const { appName: _previous, ...settings } = iconSettings(board);
+    handleArtboardsUpdate(
+      artboards.map((ab) => (ab.id === boardId ? { ...ab, appIcon: name ? { ...settings, appName: name } : settings } : ab)),
+      { label: 'Rename app', icon: 'edit', detail: board.name, mergeKey: `Rename app:${boardId}` }
+    );
+  };
+
+
+  const handleEditIconOnCanvas = (boardId: string, elementId?: string) => {
+    setIsAppIconOpen(false);
+    setAppIconLiveHidden(false);
+    setActiveArtboardId(boardId);
+    setSelectedElementIdOnActiveArtboard(elementId ?? null);
+    revealArtboard(boardId);
+  };
+
+  /**
+   * The icon's three captures off the live canvas, which every icon picture
+   * is drawn from (src/lib/appIcon/raster.ts): the whole icon with nothing
+   * painted behind it, so a see-through part shows; the front layer alone on
+   * transparent; the back layer with the board's ground. The Export dialog's
+   * recipe otherwise (the clone unscaled, editor chrome dropped), in the base
+   * language when the icon has words in the language on screen.
+   */
+  const captureIconLayers = async (boardId: string, scale: number): Promise<IconCaptureUrls | null> => {
+    const board = artboardsRef.current.find((ab) => ab.id === boardId);
+    if (!board || !isIconBoard(board)) return null;
+    const locale = activeLocaleRef.current;
+    const translated = !!locale && Object.keys(board.localized?.[locale] ?? {}).length > 0;
+    return withLocaleOnCanvas(translated ? null : undefined, async () => {
+      const node = document.querySelector(`[data-artboard-dom-id="${boardId}"]`) as HTMLElement | null;
+      if (!node) return null;
+      if (typeof document !== 'undefined' && document.fonts?.ready) {
+        try {
+          await document.fonts.ready;
+        } catch {
+          // A browser that cannot report font loading captures what it has.
+        }
+      }
+      const backIds = new Set(board.elements.filter((el) => el.iconLayer === 'back').map((el) => el.id));
+      const chrome = (el: HTMLElement) => !!(el?.hasAttribute?.('data-export-exclude') || el?.hasAttribute?.('data-interaction-handle'));
+      const layerOf = (el: HTMLElement): 'back' | 'front' | null => {
+        const id = el?.getAttribute?.('data-element-id');
+        return id ? (backIds.has(id) ? 'back' : 'front') : null;
+      };
+      const { backgroundImage } = artboardBackground(board);
+      const common = { width: board.size.width, height: board.size.height, pixelRatio: scale, cacheBust: false };
+      const unscale = { transform: 'scale(1)', transformOrigin: 'top left', width: `${board.size.width}px`, height: `${board.size.height}px` };
+      const visibility = node.style.visibility;
+      node.style.visibility = 'visible';
+      try {
+        const full = await captureNodeToPng(node, { ...common, filter: (n) => !chrome(n as HTMLElement), style: { ...unscale, backgroundImage } });
+        const front = await captureNodeToPng(node, {
+          ...common,
+          filter: (n) => {
+            const el = n as HTMLElement;
+            return !chrome(el) && !el?.hasAttribute?.('data-board-background') && layerOf(el) !== 'back';
+          },
+          style: { ...unscale, backgroundColor: 'transparent', backgroundImage: 'none' },
+        });
+        const back = await captureNodeToPng(node, {
+          ...common,
+          filter: (n) => {
+            const el = n as HTMLElement;
+            return !chrome(el) && layerOf(el) !== 'front';
+          },
+          style: { ...unscale, backgroundImage },
+        });
+        return { full, front, back };
+      } finally {
+        node.style.visibility = visibility;
+      }
+    });
+  };
+  const captureIconLayersRef = useRef(captureIconLayers);
+  captureIconLayersRef.current = captureIconLayers;
+  // Stable, so the icon window measures again only when the icon changes.
+  const captureIconLayersStable = useCallback(
+    (boardId: string, scale: number) => captureIconLayersRef.current(boardId, scale),
     []
   );
 
@@ -5983,6 +6240,7 @@ export function OpenScreenshotGeneratorLayout() {
     { skipAppPreviewBoards = false }: { skipAppPreviewBoards?: boolean } = {}
   ) => {
     setIsExportDialogOpen(false);
+    setExportSummary(null);
     // Both exports rasterize the live canvas, so a timeline left running would
     // bake a mid-animation frame into the output.
     stopPlayback();
@@ -6006,17 +6264,25 @@ export function OpenScreenshotGeneratorLayout() {
         ? original.filter((ab) => projectHasVideoContent([ab]) && !isCreativeBoard(ab)).map((ab) => ab.id)
         : []
     );
+    // The app icon is no store screenshot: it has an export of its own (the
+    // icon window, every size for every store), and a 1024 x 1024 PNG in a
+    // screenshot set is a size \`osg verify\` fails. Exported on its own, from
+    // its own artboard, it is the PNG asked for.
+    const iconLeftOut = scopedId ? [] : original.filter(isIconBoard).map((ab) => ab.id);
+    for (const id of iconLeftOut) skippedIds.add(id);
     const scope = (list: ArtboardState[]) =>
       list.filter((ab) => !skippedIds.has(ab.id) && (!scopedId || ab.id === scopedId));
-    // The extra App Store sizes are screenshot sizes. Header and search art has
-    // one size and goes out with the as-is pass only.
-    const scopeForFormat = (list: ArtboardState[]) => scope(list).filter((ab) => !isCreativeBoard(ab));
+    // The extra App Store sizes are screenshot sizes. Header and search art and
+    // the app icon have one size each and go out with the as-is pass only.
+    const scopeForFormat = (list: ArtboardState[]) => scope(list).filter(isScreenshotBoard);
 
     const targets = scope(original);
     if (targets.length === 0) {
       toast({
         title: "Nothing to export",
-        description: skippedIds.size > 0 && (!scopedId || skippedIds.has(scopedId))
+        description: iconLeftOut.length > 0 && iconLeftOut.length === skippedIds.size
+          ? "The app icon is saved on its own. Use App icon in the + menu."
+          : skippedIds.size > 0 && (!scopedId || skippedIds.has(scopedId))
           ? "App Preview artboards export as a video. Select one, then export again."
           : currentArtboardOnly
             ? "Select an artboard on the canvas first."
@@ -6037,7 +6303,7 @@ export function OpenScreenshotGeneratorLayout() {
     // opening a native save dialog per file; cancelling the picker aborts
     // the whole export. Single-file exports keep the per-file save dialog.
     let exportDir: string | null | undefined;
-    const formatTargetCount = targets.filter((ab) => !isCreativeBoard(ab)).length;
+    const formatTargetCount = targets.filter(isScreenshotBoard).length;
     const filesPerLocale = (asIs ? targets.length : 0) + generateFormats.length * formatTargetCount;
     const totalFiles = filesPerLocale * localesToExport.length;
     if (isTauri() && totalFiles > 1) {
@@ -6116,16 +6382,21 @@ export function OpenScreenshotGeneratorLayout() {
     // Closes the mutation door for the whole run. Nothing may write the project
     // while the canvas is showing a converted or re-projected list.
     isExportingRef.current = true;
+    // Each generated size is the design laid out again for it (src/lib/deviceSets/),
+    // worked out once per artboard and size and shared by every language.
+    const plans: PlanCache = new Map();
     try {
       for (const locale of localesToExport) {
         if (pngExportCancelRef.current) break;
         const projected = projectArtboards(original, locale);
+        // Laid out by measuring its text, so the faces it draws in come first.
+        if (generateFormats.length > 0) await facesReady(projected);
         // Rebuilt per language, or the German set would be numbered 13..18
         // instead of 01..06 and every fastlane-style convention expects 1..N.
         // Skipped App Preview boards are left out of the count too, so the
-        // exported screenshots still run 1..N without gaps, and so is header
-        // and search art, which is named for its placement instead.
-        const numbered = projected.filter((ab) => !skippedIds.has(ab.id) && !isCreativeBoard(ab));
+        // exported screenshots still run 1..N without gaps, and so are header
+        // and search art, named for their placement, and the app icon.
+        const numbered = projected.filter((ab) => !skippedIds.has(ab.id) && isScreenshotBoard(ab));
         const order = {
           indexById: Object.fromEntries(numbered.map((ab, i) => [ab.id, i + 1])),
           total: numbered.length,
@@ -6162,7 +6433,7 @@ export function OpenScreenshotGeneratorLayout() {
             localeLabel: localeLabelFor(locale),
             phase: 'preparing',
           });
-          const { artboards: converted } = convertArtboardsToFormat(projected, preset);
+          const converted = boardsOnDevice(original, projected, preset.id, locale, { measure: measureText, cache: plans });
           const repositioned = calculateArtboardPositions(converted);
           setExportCanvasArtboards(repositioned);
           await waitForCanvasToSettle(400);
@@ -6189,6 +6460,23 @@ export function OpenScreenshotGeneratorLayout() {
       setIsCancellingPngExport(false);
       const cancelled = pngExportCancelRef.current;
       pngExportCancelRef.current = false;
+
+      if (saved.length > 0 && !cancelled) {
+        const baseSize = screenshotBoards(original)[0]?.size ?? original[0]?.size;
+        const formatLabels: string[] = [];
+        if (asIs && baseSize) formatLabels.push(`${baseSize.width}×${baseSize.height}`);
+        for (const formatId of generateFormats) {
+          const preset = DEVICE_FORMAT_PRESETS.find((entry) => entry.id === formatId);
+          if (preset) formatLabels.push(`${preset.artboard.width}×${preset.artboard.height}`);
+        }
+        setExportSummary({
+          fileCount: saved.length,
+          languages: locales && locales.length > 0 ? locales : [activeLocale ?? getBaseLocale(original)],
+          formatLabels,
+          destination: exportDir ?? saved[0]?.path ?? null,
+          isDesktop: isTauri(),
+        });
+      }
 
       // One summary instead of a toast per file. A single-file export names
       // where it went, which is the useful bit on desktop.
@@ -6295,8 +6583,9 @@ export function OpenScreenshotGeneratorLayout() {
 
     isExportingRef.current = true;
     try {
+      if (preset) await facesReady(projected);
       const list = preset
-        ? calculateArtboardPositions(convertArtboardsToFormat(projected, preset).artboards)
+        ? calculateArtboardPositions(boardsOnDevice(original, projected, preset.id, stamp, { measure: measureText }))
         : calculateArtboardPositions(projected);
       setExportCanvasArtboards(list);
       await waitForCanvasToSettle(400);
@@ -6362,8 +6651,9 @@ export function OpenScreenshotGeneratorLayout() {
       ? DEVICE_FORMAT_PRESETS.find((entry) => entry.id === options.formatId)
       : undefined;
     const projected = projectArtboards(original, stamp);
+    if (preset) await facesReady(projected);
     const list = preset
-      ? calculateArtboardPositions(convertArtboardsToFormat(projected, preset).artboards)
+      ? calculateArtboardPositions(boardsOnDevice(original, projected, preset.id, stamp, { measure: measureText }))
       : calculateArtboardPositions(projected);
     const chosen = list.filter((artboard) => artboardIds.includes(artboard.id));
     if (chosen.length === 0) return { videos: [], warnings: [] };
@@ -7001,7 +7291,13 @@ export function OpenScreenshotGeneratorLayout() {
     projectTabs.flushSession();
     // And the agent chat and the Website view's site, whose own pagehide
     // flushes never run when a desktop window closes.
-    return Promise.all([claudeAgent.flush(), flushWebsiteSaves()]);
+    return Promise.all([
+      claudeAgent.flush(),
+      flushWebsiteSaves(),
+      cutoutFlushRef.current?.().then((saved) => {
+        if (!saved) throw new Error("Your change wasn't saved");
+      }),
+    ]);
   };
 
   // The session keeps the active tab's view, read as it is written
@@ -8500,19 +8796,19 @@ export function OpenScreenshotGeneratorLayout() {
       return;
     }
     
-    // Header and search art keeps Apple's size: it is the same whatever size
-    // the screenshots are.
-    const keptCreative = artboards.filter(isCreativeBoard).length;
-    if (keptCreative === artboards.length) {
+    // Header and search art keeps Apple's size, and the app icon its own: both
+    // are the same whatever size the screenshots are.
+    const keptAtSize = artboards.filter((artboard) => !isScreenshotBoard(artboard)).length;
+    if (keptAtSize === artboards.length) {
       toast({
-        title: "Header and search art keeps Apple's size",
+        title: artboards.some(isCreativeBoard) ? "Header and search art keeps Apple's size" : 'The app icon keeps its size',
         description: 'Select a screenshot artboard to change the canvas size.',
       });
       return;
     }
 
     // Update all artboards with the new size
-    const updatedArtboards = artboards.map(artboard => isCreativeBoard(artboard) ? artboard : ({
+    const updatedArtboards = artboards.map(artboard => !isScreenshotBoard(artboard) ? artboard : ({
       ...artboard,
       size: {
         width,
@@ -8532,7 +8828,8 @@ export function OpenScreenshotGeneratorLayout() {
       description: (scaleContent
         ? `All artboards resized to ${width} × ${height} pixels with content scaled to fit.`
         : `All artboards resized to ${width} × ${height} pixels`) +
-        (keptCreative > 0 ? ' Header and search art keeps its App Store size.' : '')
+        (artboards.some(isCreativeBoard) ? ' Header and search art keeps its App Store size.' : '') +
+        (artboards.some(isIconBoard) ? ' The app icon keeps its size.' : '')
     });
   };
 
@@ -8928,6 +9225,12 @@ export function OpenScreenshotGeneratorLayout() {
   // The layers list and the board-level properties form both show what the
   // active language shows, so they read the projection.
   const activeArtboard = viewArtboards.find(ab => ab.id === activeArtboardId);
+  // The icon in the base document, for the live preview over the canvas: an
+  // icon is the same in every language, so it shows the one that exports.
+  const activeIconBoard = useMemo(() => {
+    const board = artboards.find((ab) => ab.id === activeArtboardId);
+    return board && isIconBoard(board) ? board : null;
+  }, [artboards, activeArtboardId]);
   const activeArtboardElements = activeArtboard ? activeArtboard.elements : [];
   const activeArtboardName = activeArtboard ? activeArtboard.name : undefined;
   // A project can hold App Preview boards next to plain screenshot boards, so
@@ -9105,6 +9408,7 @@ export function OpenScreenshotGeneratorLayout() {
       // for an empty one.
       activeArtboardDetails:
         activeArtboardId && selectedElementIds.length === 0 ? (activeArtboard ?? null) : null,
+      onIconBoard: !!activeArtboard && isIconBoard(activeArtboard),
       activeLocale,
       baseLocale: baseLocaleCode,
       localeOverride: selectedLocaleOverride,
@@ -9281,12 +9585,46 @@ export function OpenScreenshotGeneratorLayout() {
   // Not memoized on purpose: nearly every one of these is recreated per render
   // anyway, so a dependency list here would only be a lie. useDockHost keeps it
   // in a ref, so its identity does not cost anything.
+  // The Properties panel's Remove background: the picture is cut out in place,
+  // keeping its frame, through the same path as the agents' remove_background.
+  const handleRemoveImageBackground = async (elementId: string) => {
+    const api = mcpApiRef.current;
+    if (!api) return;
+    const locale = activeLocaleRef.current;
+    await detectCutout();
+    const status = getCutoutStatus();
+    const working = toast({
+      title: 'Removing the background',
+      description:
+        status.phase === 'ready' || !status.model
+          ? 'This takes a few seconds.'
+          : `The first time takes a little longer: a one-time download (${megabytes(status.model.bytes)}) comes first.`,
+    });
+    try {
+      const result = await api.removeBackground({ elementId, download: true, locale });
+      working.dismiss();
+      toast({
+        title: 'Background removed',
+        description: 'Undo brings the background back. To fix the edges, open Remove background.',
+        action: result.myImageId ? (
+          <ToastAction altText="Fix the edges in Remove background" onClick={() => showCutout(result.myImageId)}>
+            Fix edges
+          </ToastAction>
+        ) : undefined,
+      });
+    } catch (error) {
+      working.dismiss();
+      toast({ title: "The background wasn't removed", description: error instanceof Error ? error.message : 'Try again.' });
+    }
+  };
+
   const dockHandlers: DockHandlers = {
     onUpdateElement: handleUpdateSelectedElement,
     onUpdateElementById: handleUpdateElementById,
     onStudioLive: updateStudioLive,
     onTranslateElement: handleTranslateTextElement,
     onCaptureScreenshot: (elementId) => void handleCaptureScreenshot(elementId),
+    onRemoveImageBackground: (elementId) => void handleRemoveImageBackground(elementId),
     onUpdateArtboardDetails: handleUpdateArtboardDetails,
     onResetLocaleField: handleResetLocaleField,
     onToggleLocaleDetach: handleToggleLocaleDetach,
@@ -9446,6 +9784,7 @@ export function OpenScreenshotGeneratorLayout() {
       size: activeArtboard.size,
       format: format === 'mixed' ? null : format,
       creative: isCreativeBoard(activeArtboard),
+      icon: isIconBoard(activeArtboard),
     };
   }, [activeArtboard]);
 
@@ -10031,6 +10370,15 @@ const generateRandomProjectName = (): string => {
     }
     return counts;
   }, [availableProjects]);
+  // A template category's tab in the start dialog, with its template count.
+  const categoryTabTrigger = (cat: TemplateCategory) => (
+    <TabsTrigger key={cat.id} value={cat.id} className="gap-1.5">
+      {cat.label}
+      <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full border px-1 text-[11px] tabular-nums text-muted-foreground">
+        {isLoadingProjects ? '…' : (templateCounts[cat.id] ?? 0)}
+      </span>
+    </TabsTrigger>
+  );
 
   /**
    * Which project ids exist on this device.
@@ -10115,17 +10463,19 @@ const generateRandomProjectName = (): string => {
             {dialogView === 'agent' || dialogView === 'quickstart' || dialogView === 'graphics' ? (
               <DialogHeader>
                 <div className="flex items-start gap-2">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="-ml-2 h-8 w-8 shrink-0"
-                    onClick={() =>
-                      setDialogView(dialogView === 'agent' ? agentReturnView : 'templates')
-                    }
-                    aria-label="Back"
-                  >
-                    <ChevronLeftIcon className="h-4 w-4" />
-                  </Button>
+                  {(dialogView !== 'agent' || agentReturnView === 'quickstart') && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="-ml-2 h-8 w-8 shrink-0"
+                      onClick={() =>
+                        setDialogView(dialogView === 'agent' ? agentReturnView : 'templates')
+                      }
+                      aria-label="Back"
+                    >
+                      <ChevronLeftIcon className="h-4 w-4" />
+                    </Button>
+                  )}
                   <div className="min-w-0 flex-1 text-left">
                     <DialogTitle>
                       {dialogView === 'agent'
@@ -10142,18 +10492,39 @@ const generateRandomProjectName = (): string => {
                           : 'Drop them in and every design that fits shows your own screens. Pick one to open it.'}
                     </DialogDescription>
                   </div>
+                  {dialogView === 'agent' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => setDialogView('templates')}
+                    >
+                      More ways to start
+                    </Button>
+                  )}
                 </div>
               </DialogHeader>
             ) : (
-              // The two entry cards below say all of this, so the heading is only
-              // kept for the dialog's accessible name. sr-only takes it out of
-              // flow, so it costs no vertical space either.
-              <>
+              // The templates / blank / recent view keeps a quick return to the
+              // default AI agent start screen.
+              <div className="flex items-center justify-between gap-2 pb-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="-ml-2 gap-1.5 text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setAgentReturnView('templates');
+                    setDialogView('agent');
+                  }}
+                >
+                  <ChevronLeftIcon className="h-4 w-4" />
+                  Back to AI agent
+                </Button>
                 <DialogTitle className="sr-only">Start a new project</DialogTitle>
                 <DialogDescription className="sr-only">
                   Let the AI agent build it, choose a template, or start with a blank canvas.
                 </DialogDescription>
-              </>
+              </div>
             )}
 
             {dialogView === 'agent' && (
@@ -10167,6 +10538,10 @@ const generateRandomProjectName = (): string => {
                   handoffScreenshots={agentHandoff?.shots}
                   handoffToken={agentHandoff?.token}
                   onStartClaudeCode={handleStartClaudeCode}
+                  onCaptureFromSimulator={() => {
+                    setIsTemplateSelectorOpen(false);
+                    selectActivity('capture');
+                  }}
                 />
               </div>
             )}
@@ -10233,23 +10608,16 @@ const generateRandomProjectName = (): string => {
             {dialogView === 'templates' && (
             <Tabs value={templateTab} onValueChange={setTemplateTab} className="flex min-h-0 flex-1 flex-col">
               <TabsList className="mx-1 self-start">
-                {/* Community leads the row, and the dialog opens on it: what
-                    somebody else shipped answers "what should mine look like"
-                    better than a grid of empty templates does. */}
+                {/* App Screenshots leads the row and the dialog opens on it.
+                    Community comes second, then the other categories. */}
+                {TEMPLATE_CATEGORIES.slice(0, 1).map(categoryTabTrigger)}
                 {HAS_DISCOVER && (
                   <TabsTrigger value={COMMUNITY_TAB_ID} className="gap-1.5">
                     <CompassIcon className="h-4 w-4 text-primary" />
                     Community
                   </TabsTrigger>
                 )}
-                {TEMPLATE_CATEGORIES.map((cat) => (
-                  <TabsTrigger key={cat.id} value={cat.id} className="gap-1.5">
-                    {cat.label}
-                    <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full border px-1 text-[11px] tabular-nums text-muted-foreground">
-                      {isLoadingProjects ? '…' : (templateCounts[cat.id] ?? 0)}
-                    </span>
-                  </TabsTrigger>
-                ))}
+                {TEMPLATE_CATEGORIES.slice(1).map(categoryTabTrigger)}
               </TabsList>
 
               {HAS_DISCOVER && (
@@ -10414,9 +10782,9 @@ const generateRandomProjectName = (): string => {
         <AlertDialog open={!!projectToDelete} onOpenChange={(open) => !open && setProjectToDelete(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogTitle>Delete this project?</AlertDialogTitle>
               <AlertDialogDescription>
-                This will permanently delete this project. This action cannot be undone.
+                This permanently removes the project from this device and cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -10425,7 +10793,7 @@ const generateRandomProjectName = (): string => {
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 onClick={() => projectToDelete && handleDeleteProject(projectToDelete)}
               >
-                Delete
+                Delete project
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -10808,6 +11176,12 @@ const generateRandomProjectName = (): string => {
   // Stable, so the Website view does not start its screenshot work again on every render.
   const captureForWebsite = useCallback((request: WebsiteCaptureRequest) => captureBoardsForWebsiteRef.current(request), []);
   const websiteBackToEditor = useCallback(() => setActivity('editor'), []);
+  // What Store compliance reads of the open project: its checklist is kept by the
+  // project's id, and Ask AI's check reads the text of every language.
+  const readProjectForCompliance = useCallback(
+    () => ({ id: activeProjectIdRef.current, name: projectNameRef.current, artboards: artboardsRef.current }),
+    []
+  );
   const websiteProject = useMemo(() => ({ id: activeProjectId, name: currentProjectName, artboards }), [activeProjectId, currentProjectName, artboards]);
 
   // Render one artboard for the MCP export tools. Same capture recipe as the
@@ -11499,7 +11873,10 @@ const generateRandomProjectName = (): string => {
       const token = locale ? `${locale}_` : '';
       return withLocaleOnCanvas(locale, async () => {
         const results: McpExportResult[] = [];
-        for (const board of artboards) {
+        // The app icon is left out, as in the export dialog: a 1024 square
+        // beside the screenshots reads as a wrong-sized screenshot to an
+        // upload script and to `osg verify`. export_png takes it on its own.
+        for (const board of artboards.filter((ab) => !isIconBoard(ab))) {
           results.push(
             await captureArtboardForMcp(board, {
               scale,
@@ -11921,6 +12298,59 @@ const generateRandomProjectName = (): string => {
       return { artboardId: board.id, elementId: element.id, locale };
     },
 
+    // remove_background, list_my_images, save_to_my_images, delete_my_image
+    // (src/lib/cutout/mcp.ts). A cut into an element lands seconds after the
+    // call began, so, like placeCapturedScreenshot, it reads the newest
+    // document, commits through the newest handleArtboardsUpdate, and leaves an
+    // element whose picture changed meanwhile alone.
+    removeBackground: (input) => {
+      const projectAtStart = activeProjectIdRef.current;
+      const locale = input.locale && input.locale !== getBaseLocale(artboardsRef.current) ? input.locale : null;
+      const imageDocument = () => {
+        const base = artboardsRef.current;
+        if (locale && !getProjectLocales(base).some((entry) => entry.code === locale)) {
+          throw new Error('The picture\'s language is no longer in this project.');
+        }
+        return { base, view: projectArtboards(base, locale) };
+      };
+      return removeBackgroundForMcp(input, {
+        findImage: (elementId, artboardId) => {
+          const { view: newest } = imageDocument();
+          const board = artboardId
+            ? newest.find((candidate) => candidate.id === artboardId)
+            : newest.find((candidate) => candidate.elements.some((element) => element.id === elementId));
+          if (!board) throw new Error(artboardId ? `No artboard "${artboardId}" in this project.` : `No element "${elementId}" in this project.`);
+          const element = board.elements.find((candidate) => candidate.id === elementId);
+          if (!element) throw new Error(`No element "${elementId}" on artboard "${board.name}".`);
+          if (element.type !== 'image') throw new Error(`"${elementId}" is a ${element.type}. remove_background cuts out an image element's picture.`);
+          const src = (element as ImageElementProps).imageSrc;
+          if (!src) throw new Error(`"${elementId}" has no picture yet.`);
+          return { boardId: board.id, elementId, src, name: element.name };
+        },
+        replaceImage: (target, ref, detail) => {
+          if (activeProjectIdRef.current !== projectAtStart) {
+            throw new Error(`Another project was opened while the picture was cut, so it went into no element. The cut-out is stored as ${ref}.`);
+          }
+          const { base, view: newest } = imageDocument();
+          const board = newest.find((candidate) => candidate.id === target.boardId);
+          const element = board?.elements.find((candidate) => candidate.id === target.elementId);
+          if (!board || !element || element.type !== 'image' || (element as ImageElementProps).imageSrc !== target.src) {
+            throw new Error(`"${target.elementId}" changed while its picture was cut, so it was left alone. The cut-out is stored as ${ref}.`);
+          }
+          const next = newest.map((candidate) =>
+            candidate.id === board.id
+              ? { ...candidate, elements: candidate.elements.map((el) => (el.id === element.id ? ({ ...el, imageSrc: ref } as ArtboardElement) : el)) }
+              : candidate
+          );
+          commitForTool(unprojectArtboards(base, locale, next), namedChange('Remove Background', 'image', detail), handleArtboardsUpdateRef.current);
+          return { artboardId: board.id, elementId: element.id };
+        },
+      });
+    },
+    listMyImages: () => listMyImagesForMcp(),
+    saveToMyImages: (input) => saveToMyImagesForMcp(input),
+    deleteMyImage: (id) => deleteMyImageForMcp(id),
+
     // The Claude Code agent's code folders. Rust reads the picture and checks
     // the path; the store knows whether the process can read a folder now, and
     // whether the chat's agent ever could.
@@ -11967,6 +12397,47 @@ const generateRandomProjectName = (): string => {
     },
   };
 
+  // A picture from Remove background onto the active artboard, the way the
+  // Custom tab's tiles put one there.
+  const handlePlaceLibraryImage = (row: LibraryImageRow) => {
+    const props = placementProps(row);
+    if (!props) return;
+    if (!activeArtboardId) {
+      toast({ title: 'Open a project first', description: 'The picture goes onto the artboard you have selected.' });
+      return;
+    }
+    setActivity('editor');
+    void markLibraryImagePlaced(row.id);
+    handleAddElementToArtboard(activeArtboardId, 'image', undefined, undefined, { ...props, libraryId: customLibraryId(row.id) });
+  };
+
+  // Remove background's "Design with the agent": the picture goes to the
+  // Claude Code or Codex chat, the same way Growth hands it a question.
+  const handleAskAgentAboutPicture = (row: LibraryImageRow) => {
+    const ref = refOf(row);
+    if (!ref) return;
+    setActivity('editor');
+    const { session } = claudeAgentState;
+    claudeAgent.setPanelEnabled(true);
+    revealDockTab('agent');
+    if (isMobileViewport) setIsMobileDockOpen(true);
+    if (session.status === 'working' || session.status === 'starting') {
+      toast({ title: 'The agent is busy', description: 'Wait for it to finish, or stop it in the Agent tab, then ask again.' });
+      return;
+    }
+    track('cutout_ask_agent');
+    void markLibraryImagePlaced(row.id)
+      .then(() => claudeAgent.send({
+        text: `Use my picture "${row.name}" in this design. It is ${ref}, ${row.width} by ${row.height} pixels, with its background already removed. Put it on the artboard where it fits best, as an image element with that imageSrc, then check the result with export_png before you reply.`,
+      }))
+      .catch((error) =>
+        toast({
+          title: "The agent couldn't take the picture",
+          description: error instanceof Error ? error.message : 'Try again in the Agent tab.',
+        })
+      );
+  };
+
   return (
     <>
       {templateSelectorDialog}
@@ -11995,6 +12466,7 @@ const generateRandomProjectName = (): string => {
           {
             id: 'account',
             label: accountSession ? `Account, ${accountSession.account.name}` : 'Account',
+            name: 'Account',
             icon: accountSession ? (
               <Avatar className="h-6 w-6">
                 {accountSession.account.avatarUrl && <AvatarImage src={accountSession.account.avatarUrl} alt="" />}
@@ -12016,9 +12488,9 @@ const generateRandomProjectName = (): string => {
           inside shrinks to the window's height as it did as the page's own
           flex item; as a block it grew to its content, and the canvas lost
           its scroll area to the page. */}
-      <div ref={editorViewRef} className={cn('flex min-w-0 flex-1 flex-col md:pl-12', activity !== 'editor' && 'invisible')}>
-      <SidebarProvider defaultOpen>
-        <Sidebar side="left" collapsible="icon" variant="sidebar" className="border-r md:left-12">
+      <div ref={editorViewRef} className={cn('flex min-w-0 flex-1 flex-col', BAR_INSET.paddingLeft, activity !== 'editor' && 'invisible')}>
+      <SidebarProvider open={isPaletteOpen} onOpenChange={setIsPaletteOpen}>
+        <Sidebar side="left" collapsible="icon" variant="sidebar" className={cn('border-r', BAR_INSET.left)}>
           <SidebarHeader className="border-b">
             <div className="flex items-center gap-3 px-2 py-2.5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
               <Logo withBackground className="h-10 w-10 shrink-0 group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8" />
@@ -12058,6 +12530,7 @@ const generateRandomProjectName = (): string => {
                 onDropElement={handlePaletteDropElement}
                 onAddPreviewScene={handlePaletteAddPreviewScene}
                 onAddCreativeLook={handlePaletteAddCreativeLook}
+                onOpenCutout={showCutout}
               />
             </StoreArtSourceContext.Provider>
           </SidebarContent>
@@ -12168,10 +12641,11 @@ const generateRandomProjectName = (): string => {
             projectStep={projectLoadStatus}
           />
           <Toolbar
-            onSelectTemplate={() => openStartDialog()}
+            onSelectTemplate={() => openStartDialog('templates')}
             onDropInScreenshots={() => openStartDialog('quickstart')}
             onMakeGraphics={() => openStartDialog('graphics')}
             onMakeStoreArt={() => openCreativeDialog(false)}
+            onMakeAppIcon={() => openAppIcon(null)}
             onPreview={() => openPreview('single')}
             onPreviewStore={() => openPreview('store')}
             onPreviewCompare={() => openPreview('compare')}
@@ -12237,7 +12711,8 @@ const generateRandomProjectName = (): string => {
             isSavingToAccount={isSavingToAccount}
             onUpdateArtboardSize={handleUpdateArtboardSize}
             initialArtboardSize={getCurrentArtboardSize()}
-            onSelectDeviceFormat={handleSelectDeviceFormat}
+            onSelectDeviceFormat={(preset) => void handleSelectDeviceFormat(preset)}
+            onOpenEveryDevice={() => setIsEveryDeviceOpen(true)}
             activeDeviceFormat={activeDeviceFormat}
             onTranslate={() => {
               setTranslateElementId(null);
@@ -12281,6 +12756,7 @@ const generateRandomProjectName = (): string => {
             {/* Canvas area - takes remaining space */}
             <div ref={canvasContainerRef} className="flex-1 relative overflow-hidden">
               <CreativeBoardActionsContext.Provider value={creativeBoardActions}>
+              <AppIconActionsContext.Provider value={appIconActions}>
               <CanvasArea
                 artboards={viewArtboards}
                 onUpdateArtboards={commitView}
@@ -12312,6 +12788,7 @@ const generateRandomProjectName = (): string => {
                 activeTool={activeTool}
                 isLoading={loadPhase === 'project' || (!!activeProjectId && artboards.length === 0)}
               />
+              </AppIconActionsContext.Provider>
               </CreativeBoardActionsContext.Provider>
 
               {/* Says what the open is doing, over the canvas rather than in the
@@ -12391,10 +12868,10 @@ const generateRandomProjectName = (): string => {
                   sit with the canvas they act on. Undo and redo are two plain
                   buttons here rather than the dropdown they used to share:
                   the pill has the room, and one click beats two. */}
-              {/* Centred on a desktop canvas; pushed to the left edge on a
-                  phone so it and the zoom pill share the bottom row instead of
-                  sitting on top of each other. */}
-              <div className="absolute bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card/95 px-2 py-1 shadow-lg backdrop-blur max-md:left-3 max-md:translate-x-0">
+              {/* Centred on wide desktop canvases; pushed to the left edge below
+                  xl (1280px) so it and the zoom pill share the bottom row
+                  instead of overlapping on small laptops and tablets. */}
+              <div className="absolute bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card/95 px-2 py-1 shadow-lg backdrop-blur max-xl:left-3 max-xl:translate-x-0">
                 <Button
                   variant={activeTool === 'select' ? 'secondary' : 'ghost'}
                   size="icon"
@@ -12438,6 +12915,19 @@ const generateRandomProjectName = (): string => {
                 </Button>
               </div>
 
+              {/* The app icon at Home Screen size while it is selected, above
+                  the zoom pill. Hidden below md, where that corner holds the
+                  properties button. */}
+              {activeIconBoard && !appIconLiveHidden && !isAppIconOpen && activity === 'editor' && (
+                <div className="absolute bottom-16 right-4 z-40 hidden md:block">
+                  <AppIconLiveCard
+                    board={activeIconBoard}
+                    onOpenStudio={() => openAppIcon(activeIconBoard.id)}
+                    onClose={() => setAppIconLiveHidden(true)}
+                  />
+                </div>
+              )}
+
               {/* MCP server status (desktop only; renders nothing on the web) */}
               {/* Floating bar (bottom-RIGHT of canvas): the zoom control, with
                   the MCP status beside it rather than stacked on top of it,
@@ -12474,9 +12964,9 @@ const generateRandomProjectName = (): string => {
 
                 {/* Renders nothing unless there is an MCP server to talk about
                     (always on desktop, on the web only when a relay is
-                    configured). Hidden below md regardless: that corner has to
-                    hold the zoom pill and the properties button on a phone. */}
-                <div className="hidden md:block">
+                    configured). Hidden below xl so the zoom pill and tool bar
+                    keep room on small laptops, tablets and phones. */}
+                <div className="hidden xl:block">
                   {/* Desktop reads the API through the bridge above; on the web
                       this component owns the connection, so it needs it too. */}
                   <McpServerStatus getApi={() => mcpApiRef.current} />
@@ -12864,6 +13354,24 @@ const generateRandomProjectName = (): string => {
             />
           )}
 
+          <AppIconStudioDialog
+            isOpen={isAppIconOpen}
+            onOpenChange={setIsAppIconOpen}
+            artboards={artboards}
+            projectName={currentProjectName}
+            projectKey={activeProjectId}
+            boardId={appIconBoardId}
+            onAddIcon={handleAddIconBoard}
+            onUpdateIcon={handleUpdateIconBoard}
+            onRenameApp={handleRenameIconApp}
+            onEditOnCanvas={handleEditIconOnCanvas}
+            captureLayers={captureIconLayersStable}
+            onSaveToFolder={isDesktopApp ? saveIconFolder : undefined}
+            onSaveZip={isDesktopApp ? saveIconZip : undefined}
+            onPickProject={isDesktopApp ? scanIconProject : undefined}
+            onWriteProject={isDesktopApp ? writeIconProject : undefined}
+          />
+
           <CreativeAssetsDialog
             isOpen={isCreativeDialogOpen}
             onOpenChange={(open) => {
@@ -12912,17 +13420,51 @@ const generateRandomProjectName = (): string => {
                 setIsExportDialogOpen(false);
                 setIsPublishDialogOpen(true);
               }}
+              onPreviewStore={() => {
+                setIsExportDialogOpen(false);
+                openPreview('store');
+              }}
+              onManageLanguages={() => {
+                setIsExportDialogOpen(false);
+                setIsLanguageManagerOpen(true);
+              }}
               currentFormat={activeDeviceFormat}
               currentSize={screenshotBoards(artboards)[0]?.size ?? artboards[0]?.size}
               activeArtboard={activeArtboardSummary}
               artboardCount={artboards.length - appPreviewBoardCount}
               appPreviewBoardCount={appPreviewBoardCount}
               creativeBoardCount={creativeBoards(artboards).length}
+              iconBoardCount={iconBoards(artboards).length}
               defaultCurrentArtboardOnly={exportScopedToArtboard}
               artboards={artboards}
               activeLocale={activeLocale}
+              deviceSetFormats={projectSetFormats(artboards)}
             />
           )}
+
+          <ExportSummaryCard
+            summary={exportSummary}
+            onDismiss={() => setExportSummary(null)}
+            onPublishToStore={() => setIsPublishDialogOpen(true)}
+            onPreviewStore={() => openPreview('store')}
+            onManageLanguages={() => setIsLanguageManagerOpen(true)}
+            onOpenWebsite={() => selectActivity('website')}
+          />
+
+          <EveryDeviceDialog
+            open={isEveryDeviceOpen}
+            onOpenChange={setIsEveryDeviceOpen}
+            artboards={artboards}
+            activeLocale={activeLocale}
+            canvasToken={() => canvasSerialRef.current}
+            onCommit={handleEveryDeviceCommit}
+            onOpenAsProject={handleOpenDeviceSetAsProject}
+            onExport={() => {
+              setIsEveryDeviceOpen(false);
+              setExportScopedToArtboard(false);
+              setIsExportDialogOpen(true);
+            }}
+          />
 
           <ExportProgressDialog
             progress={pngProgress}
@@ -12950,6 +13492,10 @@ const generateRandomProjectName = (): string => {
             onOpenGrowth={() => {
               setIsPublishDialogOpen(false);
               showGrowth('overview');
+            }}
+            onOpenWebsite={() => {
+              setIsPublishDialogOpen(false);
+              selectActivity('website');
             }}
           />
 
@@ -13175,7 +13721,7 @@ const generateRandomProjectName = (): string => {
       </SidebarProvider>
       </div>
       {growthMounted && (
-        <div className={cn('fixed inset-0 z-30 md:left-12', activity !== 'growth' && 'hidden')}>
+        <div className={cn('fixed inset-0 z-30', BAR_INSET.left, activity !== 'growth' && 'hidden')}>
           <GrowthWorkspace
             active={activity === 'growth'}
             request={growthRequest}
@@ -13252,7 +13798,7 @@ const generateRandomProjectName = (): string => {
         </div>
       )}
       {captureMounted && (
-        <div className={cn('fixed inset-0 z-30 md:left-12', activity !== 'capture' && 'hidden')}>
+        <div className={cn('fixed inset-0 z-30', BAR_INSET.left, activity !== 'capture' && 'hidden')}>
           <CaptureWorkspace
             active={activity === 'capture'}
             artboards={artboards}
@@ -13270,8 +13816,27 @@ const generateRandomProjectName = (): string => {
           />
         </div>
       )}
+      {cutoutMounted && (
+        <div className={cn('fixed inset-0 z-30', BAR_INSET.left, activity !== 'cutout' && 'hidden')}>
+          <CutoutWorkspace
+            flushRef={cutoutFlushRef}
+            active={activity === 'cutout'}
+            request={cutoutRequest}
+            onPlace={handlePlaceLibraryImage}
+            onOpenAccount={() => openAccountDialog('Sign in to back up your pictures to your Google Drive or GitHub.', 'storage')}
+            onBackToEditor={() => setActivity('editor')}
+            agentUnavailable={isSecondaryWindow ? 'The agent only works in the main window' : undefined}
+            onAskAgent={claudeAgentState.available && !isSecondaryWindow ? handleAskAgentAboutPicture : undefined}
+          />
+        </div>
+      )}
+      {complianceMounted && (
+        <div className={cn('fixed inset-0 z-30', BAR_INSET.left, activity !== 'compliance' && 'hidden')}>
+          <StoreComplianceWorkspace active={activity === 'compliance'} readProject={readProjectForCompliance} />
+        </div>
+      )}
       {websiteMounted && (
-        <div className={cn('fixed inset-0 z-30 md:left-12', activity !== 'website' && 'hidden')}>
+        <div className={cn('fixed inset-0 z-30', BAR_INSET.left, activity !== 'website' && 'hidden')}>
           <WebsiteWorkspace
             active={activity === 'website'}
             project={websiteProject}

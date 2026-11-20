@@ -294,10 +294,12 @@ export function AccountDialog({
                 which is which instead, and the storage tab's own copy still
                 makes the "your files, not ours" point. */}
             {!isSignedIn
-              ? 'Connect an account and your projects are saved to storage you own. Nothing is stored on our servers.'
+              ? cloud
+                ? 'Projects stay on this device by default. Connect an account to save to your own storage, or opt in to cloud saves and share links.'
+                : 'Projects stay on this device by default. Connect an account to save to storage you own.'
               : cloud
-                ? `Cloud projects live on our backend and can be shared by link. Your ${storageLabel} is storage you own, and we never keep a copy of what is in it.`
-                : `Projects are saved to your own ${providerLabel} storage. We never keep a copy.`}
+                ? `Projects stay on this device until you save them. Cloud projects live on our backend and can be shared by link; ${storageLabel} is storage you own and we never keep a copy of what is in it.`
+                : `Projects stay on this device until you save them to your own ${providerLabel} storage. We never keep a copy.`}
           </DialogDescription>
         </DialogHeader>
 

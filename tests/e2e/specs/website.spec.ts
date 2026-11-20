@@ -26,7 +26,8 @@ function views(page: Page): Locator {
 }
 
 async function openWebsite(page: Page): Promise<Locator> {
-  await views(page).getByRole('button', { name: WEBSITE, exact: true }).click();
+  await views(page).getByRole('button', { name: 'More tools', exact: true }).click();
+  await page.getByRole('menuitem', { name: WEBSITE, exact: true }).click();
   const view = page.getByTestId('website-view');
   await expect(view).toBeVisible();
   return view;
@@ -170,12 +171,9 @@ async function editStoredSite(page: Page, patch: { languages?: string[]; transla
 }
 
 test.describe('website', () => {
-  test('the Website button sits under Discover, and a first visit shows the site the project would make', async ({ app, page, tauri, isDesktop }) => {
+  test('the Website item sits under More tools, and a first visit shows the site the project would make', async ({ app, page, tauri, isDesktop }) => {
     await projectWithText(app);
-    const names = await views(page).getByRole('button').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label')));
-    const website = names.indexOf(WEBSITE);
-    expect(website).toBeGreaterThan(names.indexOf('Growth: downloads, reviews and your store page'));
-    if (names.includes('Discover')) expect(website).toBe(names.indexOf('Discover') + 1);
+    await expect(views(page).getByRole('button', { name: 'More tools', exact: true })).toBeVisible();
 
     const view = await openWebsite(page);
     await expect(view.getByTestId('website-welcome')).toBeVisible();

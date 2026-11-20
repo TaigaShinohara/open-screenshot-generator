@@ -26,6 +26,7 @@ import {
   CheckCircle2Icon,
   ClapperboardIcon,
   ExternalLinkIcon,
+  GlobeIcon,
   KeyRoundIcon,
   LanguagesIcon,
   Loader2Icon,
@@ -209,6 +210,8 @@ export interface PublishDialogProps {
   projectName?: string;
   /** Open Growth on the timeline, from the success panel. */
   onOpenGrowth?: () => void;
+  /** Open the app website builder from the success panel. */
+  onOpenWebsite?: () => void;
 }
 
 /** What the dialog needs to know about one App Preview board before uploading. */
@@ -229,6 +232,7 @@ export function PublishDialog({
   projectId,
   projectName,
   onOpenGrowth,
+  onOpenWebsite,
 }: PublishDialogProps) {
   const { credentials, saveAppStore, savePlay } = useStoreCredentials();
   const [mounted, setMounted] = useState(false);
@@ -944,8 +948,8 @@ export function PublishDialog({
             Upload to the store
           </DialogTitle>
           <DialogDescription>
-            Send these artboards straight to your app listing with your own developer
-            credentials. Nothing passes through our servers, because there are none.
+            Send these artboards straight from this device to your app listing with your own
+            developer credentials.
           </DialogDescription>
         </DialogHeader>
 
@@ -1427,6 +1431,21 @@ export function PublishDialog({
                   >
                     <TrendingUpIcon className="mr-1 h-3 w-3" />
                     See results in Growth
+                  </Button>
+                )}
+                {onOpenWebsite && (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="h-auto p-0 text-xs"
+                    onClick={() => {
+                      onOpenChange(false);
+                      onOpenWebsite();
+                    }}
+                    title="Build a home, support and privacy page from these screenshots"
+                  >
+                    <GlobeIcon className="mr-1 h-3 w-3" />
+                    Build app website
                   </Button>
                 )}
               </div>

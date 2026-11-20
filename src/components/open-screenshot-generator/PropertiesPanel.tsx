@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 import { CaptureFromDeviceButton } from './capture/CaptureFromDeviceButton';
-import { UploadCloudIcon, PaintbrushIcon, Palette, Plus, Minus, Bold, Italic, Underline, Strikethrough, AlignLeft, AlignCenter, AlignRight, ClapperboardIcon, Trash2Icon, Languages, CheckIcon, CopyIcon, RotateCcw, LinkIcon, UnlinkIcon, MoreHorizontalIcon, BringToFront, SendToBack } from 'lucide-react';
+import { UploadCloudIcon, ScissorsIcon, PaintbrushIcon, Palette, Blend, Plus, Minus, Bold, Italic, Underline, Strikethrough, AlignLeft, AlignCenter, AlignRight, ClapperboardIcon, Trash2Icon, Languages, CheckIcon, CopyIcon, RotateCcw, LinkIcon, UnlinkIcon, MoreHorizontalIcon, BringToFront, SendToBack } from 'lucide-react';
 import type { SpanChange } from '@/lib/spanArtboards';
 import {
   AlertDialog,
@@ -523,6 +523,12 @@ const TEXT_STYLE_KEYS: DetachableKey[] = ['fontWeight', 'fontStyle', 'textDecora
 /** A text outline is its colour and its width, one control. */
 const TEXT_OUTLINE_KEYS: DetachableKey[] = ['outlineColor', 'outlineWidth'];
 
+/** A text gradient wins over its colour, so the fill is one decision, as for shapes. */
+const TEXT_FILL_KEYS: DetachableKey[] = ['color', 'fillGradient'];
+
+/** Where a new text gradient ends: orange, or blue when the text already is that orange. */
+const textGradientEnd = (start: string) => (start.trim().toLowerCase() === '#ff7a1f' ? '#3b82f6' : '#ff7a1f');
+
 /**
  * The colour a text outline gets when only its width is set. The outline's
  * colour field shows a black swatch while it is empty, so this is the colour
@@ -764,7 +770,14 @@ interface PropertiesPanelProps {
    * Omitted when the host has no Capture to offer.
    */
   onCaptureScreenshot?: (elementId: string) => void;
+  /**
+   * Cut an image element's subject out in place, keeping its frame
+   * (src/lib/cutout). Omitted when the host has no background remover.
+   */
+  onRemoveImageBackground?: (elementId: string) => void;
   activeArtboardDetails?: ArtboardState | null;
+  /** The selected element is on the app icon artboard, so its form offers the icon's two layers. */
+  onIconBoard?: boolean;
   /**
    * Board-level form edits. `scope: 'all'` writes every board in one commit,
    * which is what a background picture shared across the strip needs.
@@ -1086,7 +1099,9 @@ export function PropertiesPanel({
   onTranslateElement,
   translationAvailable = false,
   onCaptureScreenshot,
+  onRemoveImageBackground,
   activeArtboardDetails,
+  onIconBoard = false,
   onUpdateArtboardDetails,
   activeLocale,
   baseLocale,
@@ -1272,8 +1287,54 @@ export function PropertiesPanel({
    * elements it lands on (BaseElement.spanArtboards and spanBehind). Takes the
    * whole selection, so one control serves a single layer and several.
    */
+  /**
+   * On the app icon artboard: which of the icon's two layers a layer is in
+   * (src/lib/appIcon/specs.ts). The canvas keeps the background ones under
+   * the front ones, so the board looks the way its layers export.
+   */
+  const renderIconLayerControl = (element: ArtboardElement) => {
+    if (!onIconBoard || element.type === 'audio') return null;
+    const back = element.iconLayer === 'back';
+    return (
+      <div className="space-y-2 border-t pt-3" data-testid="icon-layer-control">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-medium">Icon layer</span>
+          <div className="inline-flex rounded-md bg-muted p-0.5" role="radiogroup" aria-label="Icon layer">
+            {(
+              [
+                { value: 'front', label: 'Front' },
+                { value: 'back', label: 'Back' },
+              ] as const
+            ).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={(option.value === 'back') === back}
+                onClick={() => onUpdateElement({ iconLayer: option.value === 'back' ? 'back' : undefined } as Partial<ArtboardElement>)}
+                className={cn(
+                  'rounded px-2.5 py-1 text-[11px] font-medium transition-colors',
+                  (option.value === 'back') === back ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="text-[10px] text-muted-foreground">
+          {back
+            ? 'Behind your logo. In dark mode, iPhone hides the back'
+            : 'Your logo or letter. In dark mode, iPhone shows only the front'}
+        </p>
+      </div>
+    );
+  };
+
   const renderSpanControls = (elements: ArtboardElement[]) => {
     const boxed = elements.filter((el) => el.type !== 'audio');
+    // The app icon is one board; nothing on it continues onto another.
+    if (onIconBoard) return null;
     if (!onUpdateSpan || boxed.length === 0) return null;
     const on = boxed.every((el) => el.spanArtboards === true);
     const mixed = !on && boxed.some((el) => el.spanArtboards === true);
@@ -3159,28 +3220,98 @@ export function PropertiesPanel({
           </div>
         </div>
 
-        {/* Font Color */}
+        {/* Font Color: one colour, or a two-stop gradient across the letters,
+            which wins over the colour while it is set. */}
         <div className="space-y-2">
           {detachLabelRow(
             <Label htmlFor="fontColor" className="text-xs font-medium">Color</Label>,
-            'color',
+            TEXT_FILL_KEYS,
             'Color'
           )}
-          <div className="flex items-center gap-2">
-            <Input
-              id="fontColor"
-              type="color"
-              value={element.color}
-              onChange={(e) => onUpdateElement({ color: e.target.value })}
-              className="w-10 h-10 p-1"
-            />
-            <Input
-              type="text"
-              value={element.color}
-              onChange={(e) => onUpdateElement({ color: e.target.value })}
-              className="flex-1 text-xs font-mono"
-            />
-          </div>
+          {element.fillGradient ? (
+            <div className="flex items-center gap-2">
+              <Input
+                id="fontColor"
+                type="color"
+                value={element.fillGradient.color1}
+                onChange={(e) => onUpdateElement({ fillGradient: { ...element.fillGradient!, color1: e.target.value } })}
+                className="w-10 h-10 p-1"
+                title="Gradient start color"
+                aria-label="Gradient start color"
+              />
+              {(element.fillGradient.via ?? []).map((middle, index) => (
+                <Input
+                  key={index}
+                  type="color"
+                  value={middle}
+                  onChange={(e) => {
+                    const via = [...(element.fillGradient!.via ?? [])];
+                    via[index] = e.target.value;
+                    onUpdateElement({ fillGradient: { ...element.fillGradient!, via } });
+                  }}
+                  className="w-10 h-10 p-1"
+                  title={`Gradient color ${index + 2}`}
+                  aria-label={`Gradient color ${index + 2}`}
+                />
+              ))}
+              <Input
+                type="color"
+                value={element.fillGradient.color2}
+                onChange={(e) => onUpdateElement({ fillGradient: { ...element.fillGradient!, color2: e.target.value } })}
+                className="w-10 h-10 p-1"
+                title="Gradient end color"
+                aria-label="Gradient end color"
+              />
+              <Input
+                type="number"
+                min={0}
+                max={360}
+                step={15}
+                value={element.fillGradient.angle}
+                onChange={(e) => {
+                  const angle = Number.parseFloat(e.currentTarget.value);
+                  if (Number.isFinite(angle)) onUpdateElement({ fillGradient: { ...element.fillGradient!, angle } });
+                }}
+                className="h-8 w-16 text-xs"
+                title="Gradient angle in degrees"
+                aria-label="Gradient angle in degrees"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => onUpdateElement({ fillGradient: undefined, color: element.fillGradient!.color1 })}
+              >
+                Use one color
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Input
+                id="fontColor"
+                type="color"
+                value={element.color}
+                onChange={(e) => onUpdateElement({ color: e.target.value })}
+                className="w-10 h-10 p-1"
+              />
+              <Input
+                type="text"
+                value={element.color}
+                onChange={(e) => onUpdateElement({ color: e.target.value })}
+                className="flex-1 text-xs font-mono"
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8 shrink-0"
+                onClick={() => onUpdateElement({ fillGradient: { color1: element.color, color2: textGradientEnd(element.color), angle: 90 } })}
+                title="Fill with a gradient"
+                aria-label="Fill with a gradient"
+              >
+                <Blend className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Outline: a band of colour outside the letters, the way game titles
@@ -3216,6 +3347,9 @@ export function PropertiesPanel({
               aria-label="Outline width"
             />
           </div>
+          {element.fillGradient && (
+            <div className="text-xs text-muted-foreground">Outlines don't show on gradient text</div>
+          )}
         </div>
 
         {/* Font Style. One toggle for the four buttons: a language that wants
@@ -3408,6 +3542,18 @@ export function PropertiesPanel({
             <UploadCloudIcon className="w-3 h-3 mr-1.5" />
             {element.imageSrc ? 'Change Image' : 'Upload Image'}
           </Button>
+          {onRemoveImageBackground && element.imageSrc && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onRemoveImageBackground(element.id)}
+              className="mt-1.5 h-8 w-full text-xs"
+              title="Keeps the person or product and drops the background, which undo brings back"
+            >
+              <ScissorsIcon className="mr-1.5 h-3 w-3" />
+              Remove background
+            </Button>
+          )}
 
           {/* Scale. Multiplies the element box, same as the corner handles and
               the device panel's slider, so it carries into exports too. */}
@@ -4464,6 +4610,7 @@ export function PropertiesPanel({
               is the one type with no box to give numbers for. */}
           {selectedElement.type !== 'audio' && renderGeometryProperties(selectedElement)}
           {renderSpanControls([selectedElement])}
+          {renderIconLayerControl(selectedElement)}
           {selectedElement.type === 'text' && renderTextProperties(selectedElement as TextElementProps)}
           {selectedElement.type === 'shape' && renderShapeProperties(selectedElement as ShapeElementProps)}
           {selectedElement.type === 'device' && renderDeviceProperties(selectedElement as DeviceFrameElementProps)}

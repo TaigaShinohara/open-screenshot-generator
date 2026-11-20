@@ -511,4 +511,36 @@ test.describe('uploading to a store instead', () => {
       await expect(page.locator('#asc-issuer')).toHaveCount(0);
     }
   });
+
+  test('exporting shows a non-modal release summary card that hands off to store upload', async ({
+    app,
+    page,
+    tauri,
+    isDesktop,
+  }) => {
+    test.setTimeout(240_000);
+    const downloads = collectDownloads(page);
+    await app.startBlankProject();
+    await app.openExportDialog();
+
+    const strip = app.exportDialog.getByTestId('export-release-strip');
+    await expect(strip).toBeVisible();
+    await expect(strip.getByRole('button', { name: 'Add languages' })).toBeVisible();
+    await expect(strip.getByRole('button', { name: 'Store preview' })).toBeVisible();
+
+    await app.exportDialog.getByRole('button', { name: 'Export', exact: true }).click();
+    await exportedNames(isDesktop, tauri, downloads, 1);
+
+    const summary = page.getByTestId('export-summary-card');
+    await expect(summary).toBeVisible();
+    await expect(summary.getByText('Ready for store release')).toBeVisible();
+    await expect(summary.getByText(/1 PNG file exported/)).toBeVisible();
+
+    const publishButton = summary.getByRole('button', {
+      name: isDesktop ? 'Upload to the store' : 'Store upload',
+    });
+    await publishButton.click();
+    await expect(summary).toBeHidden();
+    await expect(page.getByRole('dialog').filter({ hasText: 'Upload to the store' })).toBeVisible();
+  });
 });
