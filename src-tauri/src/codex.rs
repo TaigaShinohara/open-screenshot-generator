@@ -92,7 +92,7 @@ const SESSION_DIR: &str = "session";
 /// V8 isolate with no file system and no network. web_search is off by its own
 /// key, the sandbox is read-only and approvals are never asked for, so a
 /// command or a patch that somehow came up is refused rather than run.
-const CONFIG_TOML: &str = r#"# Written by Open Screenshot Generator for its Codex design agent and
+const CONFIG_TOML: &str = r#"# Written by tiger screen shot for its Codex design agent and
 # rewritten on every start. This folder is the agent's own Codex home: the
 # only thing it shares with your own Codex setup is the login, which
 # auth.json links to.
@@ -962,7 +962,7 @@ fn initialize_params() -> Value {
     json!({
         "clientInfo": {
             "name": "open_screenshot_generator",
-            "title": "Open Screenshot Generator",
+            "title": "tiger screen shot",
             "version": env!("CARGO_PKG_VERSION"),
         },
         "capabilities": { "experimentalApi": false },
@@ -1122,7 +1122,7 @@ fn server_request_answer(method: &str) -> Result<Value, (i64, &'static str)> {
         "mcpServer/elicitation/request" => Ok(json!({ "action": "decline", "content": null, "_meta": null })),
         "item/tool/requestUserInput" => Ok(json!({ "answers": {} })),
         "item/tool/call" => Ok(json!({ "contentItems": [], "success": false })),
-        _ => Err((-32601, "Open Screenshot Generator does not answer this request")),
+        _ => Err((-32601, "tiger screen shot does not answer this request")),
     }
 }
 

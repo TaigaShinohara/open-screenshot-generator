@@ -44,7 +44,7 @@ import { AppStoreCredentialsForm, PlayCredentialsForm } from '../publish/StoreCr
 import { AppleAdsPanel } from './GrowthAppleAds';
 import { Gated, Panel, SectionTitle, useGrowthView } from './GrowthShared';
 
-const DESKTOP_URL = 'https://openscrgen.app';
+const DESKTOP_URL = 'https://github.com/TaigaShinohara/open-screenshot-generator/releases';
 const VENDOR_URL = 'https://appstoreconnect.apple.com/itc/payments_and_financial_reports';
 const PLAY_CONSOLE_URL = 'https://play.google.com/console';
 
@@ -494,7 +494,7 @@ export function GrowthConnect({ desktop, onSync }: { desktop: boolean; onSync: (
                   Let external AI tools see your store numbers
                 </Label>
                 <p className="text-[11px] text-muted-foreground">
-                  The agent can always see your App Store and Google Play numbers. With the switch on, other AI tools you connected to Open Screenshot Generator can see the numbers too. The numbers include your sales.
+                  The agent can always see your App Store and Google Play numbers. With the switch on, other AI tools you connected to tiger screen shot can see the numbers too. The numbers include your sales.
                 </p>
               </div>
               <Switch id="growth-share" checked={settings.shareWithClients} onCheckedChange={(checked) => setSettings({ shareWithClients: checked })} />

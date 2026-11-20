@@ -1,5 +1,5 @@
-VERIFICATION-TOKEN: abs-126d1ac9
-Open Screenshot Generator template catalog. Templates are t<n>; within each, device slots are d<k> and text slots are x<k>, numbered across the whole template. Refer to templates and slots ONLY by these refs.
+VERIFICATION-TOKEN: abs-a502a8af
+tiger screen shot template catalog. Templates are t<n>; within each, device slots are d<k> and text slots are x<k>, numbered across the whole template. Refer to templates and slots ONLY by these refs.
 
 t0 | Sunup Missions | category:screenshots | 6 artboards, 1 device slots | App Store & Play Store screenshots for an alarm clock or wake-up app. Warm glow on near black, heavy two-tone...
   artboard 0 "No Snooze" devices[d0:iphone-17-pro-max] texts[x0:"No snooze. No excuses.", x1:"Just up.", x2:"The mission alarm for heavy sleepers.", x3:"Early run", x4:"06:15", x5:"Maze", x6:"Tue, Thu"]

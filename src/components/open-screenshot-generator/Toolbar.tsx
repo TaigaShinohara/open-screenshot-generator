@@ -92,7 +92,7 @@ interface ToolbarProps {
   // --- our own cloud (src/lib/cloud) --------------------------------------
   // Undefined when the build has no backend, which is what hides every one of
   // these rather than showing a control that answers "not available".
-  /** Save the open project to Open Screenshot Generator's cloud. */
+  /** Save the open project to tiger screen shot's cloud. */
   onSaveToCloud?: () => void;
   /** Turn on a share link for the open project and copy it. */
   onCopyProjectLink?: () => void;

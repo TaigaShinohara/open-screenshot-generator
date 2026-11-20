@@ -141,14 +141,14 @@ export function CodexSetup({ detection, onRetry, onOpenLink = (url) => void open
         <AlertTitle>Not available in this version</AlertTitle>
         <AlertDescription className="space-y-2">
           <p>
-            The Mac App Store version cannot start other programs. The version from openscrgen.app can run Codex.
+            The Mac App Store version cannot start other programs. The desktop build can run Codex.
           </p>
           <button
             type="button"
             onClick={() => onOpenLink(DESKTOP_DOWNLOAD_URL)}
             className="inline-flex items-center gap-1 text-primary hover:underline"
           >
-            Get it from openscrgen.app
+            View desktop releases
             <ExternalLink className="h-3 w-3" />
           </button>
         </AlertDescription>

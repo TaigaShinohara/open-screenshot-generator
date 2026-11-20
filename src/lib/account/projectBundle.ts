@@ -403,7 +403,7 @@ export async function bundleToJson(
  */
 export function bundleFromJson(parsed: unknown): ProjectBundle {
   if (!parsed || typeof parsed !== 'object') {
-    throw new Error('This file is not a Open Screenshot Generator project.');
+    throw new Error('This file is not a tiger screen shot project.');
   }
   const file = parsed as Partial<InlineBundleFile> & { projectData?: unknown };
   if (!Array.isArray(file.projectData)) {

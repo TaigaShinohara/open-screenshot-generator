@@ -2,7 +2,7 @@
 name: osg-design
 description: >-
   How to build and edit App Store and Google Play screenshot designs in the project that is open
-  in Open Screenshot Generator, using the osg-editor design tools. Load it before the first
+  in tiger screen shot, using the osg-editor design tools. Load it before the first
   design tool call of every conversation in this chat. It covers every design request: a first
   design from the user's screenshots, templates, headlines and copy, fonts, colours, backgrounds,
   device frames, layout fixes, adding, removing or reordering artboards, translations and App

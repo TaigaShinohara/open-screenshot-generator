@@ -726,7 +726,7 @@ fn prepare_workspace(dir: &Path, mcp_url: &str, token: &str) -> Result<Workspace
     let manifest = json!({
         "name": PLUGIN_NAME,
         "version": "1.0.0",
-        "description": "How Open Screenshot Generator's design agent works",
+        "description": "How tiger screen shot's design agent works",
     });
     write_if_changed(
         &manifest_dir.join("plugin.json"),

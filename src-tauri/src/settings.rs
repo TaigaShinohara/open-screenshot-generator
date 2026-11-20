@@ -315,7 +315,7 @@ pub fn register<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         window.build()?
     };
 
-    let about_item = MenuItemBuilder::with_id(MENU_ID_ABOUT, "About Open Screenshot Generator").build(app)?;
+    let about_item = MenuItemBuilder::with_id(MENU_ID_ABOUT, "About tiger screen shot").build(app)?;
     let mut help_menu = SubmenuBuilder::new(app, "Help").item(&about_item);
     // Not in the store builds, which their store updates, nor in a build with
     // no update server (updater.rs).

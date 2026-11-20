@@ -1,4 +1,7 @@
-# Agent guide: Open Screenshot Generator
+# Agent guide: tiger screen shot
+
+Personal fork of Open Screenshot Generator. Keep the display name lowercase.
+Storage keys, protocol names and desktop identifiers retain their existing names.
 
 Editor for App Store and Play Store screenshots and preview videos. Next.js 15 **static export** (no server, no API routes) plus a Tauri v2 desktop shell running the same bundle. Projects live in IndexedDB. Desktop adds the MCP server, the Claude Code and Codex agents, the embedded-webview AI mode, local AI providers, and loopback OAuth.
 

@@ -1,11 +1,14 @@
-# Open Screenshot Generator
+# tiger screen shot
+
+A personal fork of [Open Screenshot Generator](https://github.com/dotnetdreamer/open-screenshot-generator), created by Idrees Khan and licensed under MIT. This fork is named **tiger screen shot**. The original copyright and license remain in [LICENSE](LICENSE).
+
+Run this checkout with `npm ci` and `npm run dev`. See [the fork guide](taiga/README.md) for the Japanese and English templates and local store pack workflow. Package names, data keys and desktop identifiers are retained so existing projects and settings remain accessible.
 
 [![License: MIT](https://img.shields.io/github/license/dotnetdreamer/open-screenshot-generator)](LICENSE)
-[![Latest release](https://img.shields.io/github/v/release/dotnetdreamer/open-screenshot-generator)](https://github.com/dotnetdreamer/open-screenshot-generator/releases/latest)
 
 Make screenshots and preview videos for the App Store and Google Play. Start with a template, add screenshots of your app, change the text and colors, then export the finished files at store sizes.
 
-Open the [web editor](https://editor.openscrgen.app), download the [desktop app](https://github.com/dotnetdreamer/open-screenshot-generator/releases/latest), or [watch the walkthrough](https://youtu.be/gfABjk1Q_Z0?si=uWIIoq1cgQIQSgud).
+Upstream resources: the [web editor](https://editor.openscrgen.app), [desktop releases](https://github.com/dotnetdreamer/open-screenshot-generator/releases/latest), and [walkthrough](https://youtu.be/gfABjk1Q_Z0?si=uWIIoq1cgQIQSgud). Those downloads and the published npm package are the upstream app. Build this fork from this checkout.
 
 <div align="center">
 

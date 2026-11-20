@@ -10,7 +10,7 @@ import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 import { PANEL_WINDOW_BOOT_SCRIPT } from "@/lib/panels/boot";
 
 export const metadata: Metadata = {
-  title: 'Open Screenshot Generator - Design & Translate App Store Graphics',
+  title: 'tiger screen shot',
   description: 'Canva for App Store & Play Store graphics. Design, localize, and automatically translate app store screenshots and preview videos directly in your browser.',
   keywords: ['app store screenshots', 'play store graphics', 'app screenshot generator', 'localize app screenshots', 'translate app store graphics', 'screenshot maker', 'app store localization'],
 };

@@ -350,7 +350,8 @@ interface RepoAnswer {
 }
 
 /** The end of the description every repository the app makes gets. */
-const REPO_MARK = 'made with Open Screenshot Generator';
+const REPO_MARK = 'made with tiger screen shot';
+const LEGACY_REPO_MARK = 'made with Open Screenshot Generator';
 
 export function repoDescription(appName: string): string {
   return `The website of ${appName || 'my app'}, ${REPO_MARK}`.slice(0, 350);
@@ -376,7 +377,8 @@ async function holdsOurSite(ctx: Ctx, owner: string, repo: string, branch: strin
  * lost by putting the site there.
  */
 async function unfinishedByUs(ctx: Ctx, owner: string, repo: string, answer: RepoAnswer): Promise<boolean> {
-  if (!answer.description?.trim().endsWith(REPO_MARK)) return false;
+  const description = answer.description?.trim();
+  if (!description || ![REPO_MARK, LEGACY_REPO_MARK].some((mark) => description.endsWith(mark))) return false;
   const commits = await api<Array<{ commit?: { tree?: { sha?: string } } }>>(ctx, 'GET', `/repos/${owner}/${repo}/commits?per_page=2`, undefined, [404, 409]);
   // 409 is GitHub's answer for a repository with no commit at all.
   if (commits.status === 409) return true;

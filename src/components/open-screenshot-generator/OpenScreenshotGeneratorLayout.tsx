@@ -1369,7 +1369,7 @@ export function OpenScreenshotGeneratorLayout() {
       if (cancelled) return disposeStatus();
       const status = await getMcpStatus();
       if (status.running && status.url) {
-        console.info(`[MCP] Open Screenshot Generator design tools available at ${status.url}`);
+        console.info(`[MCP] tiger screen shot design tools available at ${status.url}`);
       }
     })();
     return () => {
@@ -8094,7 +8094,7 @@ export function OpenScreenshotGeneratorLayout() {
   useEffect(() => {
     if (!isTauri() || !isSecondaryWindow || !currentProjectName) return;
     void import('@tauri-apps/api/window')
-      .then(({ getCurrentWindow }) => getCurrentWindow().setTitle(`${currentProjectName} - Open Screenshot Generator`))
+      .then(({ getCurrentWindow }) => getCurrentWindow().setTitle(`${currentProjectName} - tiger screen shot`))
       .catch(() => {});
   }, [currentProjectName, isSecondaryWindow]);
 
@@ -12108,7 +12108,7 @@ const generateRandomProjectName = (): string => {
               <Logo withBackground className="h-10 w-10 shrink-0 group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8" />
               <div className="flex min-w-0 flex-col group-data-[collapsible=icon]:hidden">
                 {/* Wraps rather than truncates: the name is too long for one line here. */}
-                <span className="text-sm font-semibold leading-tight tracking-tight">Open Screenshot Generator</span>
+                <span className="text-sm font-semibold leading-tight tracking-tight">tiger screen shot</span>
                 <span className="text-xs leading-tight text-muted-foreground">Canva for App Store &amp; Play Store graphics</span>
               </div>
             </div>
@@ -13196,7 +13196,7 @@ const generateRandomProjectName = (): string => {
                 <div className="flex items-center gap-3">
                   <Logo withBackground className="h-12 w-12" />
                   <div className="text-left">
-                    <DialogTitle>Open Screenshot Generator</DialogTitle>
+                    <DialogTitle>tiger screen shot</DialogTitle>
                     <DialogDescription>Version {packageJson.version}</DialogDescription>
                   </div>
                 </div>
@@ -13207,7 +13207,14 @@ const generateRandomProjectName = (): string => {
                   drop your screenshots into device frames, automatically translate your text into 50+ languages, and export PNGs sized for Google Play
                   and the Apple App Store.
                 </p>
-                <p>Projects are saved locally in your browser. Nothing is uploaded anywhere.</p>
+                <p>Projects are saved on this device. Cloud saving, sharing and AI services are optional.</p>
+                <p>
+                  Based on{' '}
+                  <button type="button" className="underline underline-offset-2 hover:text-foreground" onClick={() => void openExternal('https://github.com/dotnetdreamer/open-screenshot-generator')}>
+                    Open Screenshot Generator
+                  </button>{' '}
+                  by Idrees Khan, under the MIT license.
+                </p>
               </div>
               {/* Desktop: where updates stand, and the button that acts on it. */}
               <AboutUpdateStatus />

@@ -73,7 +73,7 @@ export function buildHostedCatalog(templates: Project[]): HostedCatalog {
     .filter((line) => !line.endsWith(': '));
 
   const body = [
-    'Open Screenshot Generator template catalog. Templates are t<n>; within each, device slots are d<k> and text slots are x<k>, numbered across the whole template. Refer to templates and slots ONLY by these refs.',
+    'tiger screen shot template catalog. Templates are t<n>; within each, device slots are d<k> and text slots are x<k>, numbered across the whole template. Refer to templates and slots ONLY by these refs.',
     '',
     artifacts.catalogText,
     '',

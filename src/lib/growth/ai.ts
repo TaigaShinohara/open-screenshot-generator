@@ -622,7 +622,7 @@ export async function askAboutGrowth(request: {
   const store = request.store ?? 'appstore';
   const words = STORE_WORDS[store];
   const system = [
-    `You are a ${words.store} growth analyst inside Open Screenshot Generator, an editor for store screenshots. You answer questions about one app, using the data below.`,
+    `You are a ${words.store} growth analyst inside tiger screen shot, an editor for store screenshots. You answer questions about one app, using the data below.`,
     'Rules:',
     '- Use only the numbers in the data. If something is not in it, say so and say what would show it.',
     `- Be concrete: quote the figures, the dates and the ${store === 'playstore' ? 'countries' : 'storefronts'}. Short paragraphs, under 200 words unless asked for more.`,

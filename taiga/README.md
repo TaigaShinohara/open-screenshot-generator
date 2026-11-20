@@ -1,8 +1,24 @@
-# Taiga fork: what is customized here
+# tiger screen shot: what is customized here
 
 Fork of dotnetdreamer/open-screenshot-generator (MIT), customized for one
 person's store release workflow. Upstream stays the base; everything personal
 lives in this folder or is listed below, so merging upstream updates stays easy.
+
+The display name is **tiger screen shot**, including its lowercase spelling.
+The editor, About dialog, desktop windows and generated credits use that name.
+About and the root README credit the original project and its author; `LICENSE`
+keeps the original MIT notice. Existing database names, preference keys, cloud
+folder names, project markers, CLI package names and desktop identifiers remain
+compatible. The Website publisher also accepts the old repository description
+when completing an interrupted publish. This rebrand does not publish an app,
+change store publisher identities or create a desktop release.
+
+The rename passed the root typecheck and static build, the existing 779 unit
+tests, and the 50-test Website suite including the new legacy-publish case.
+The Chromium web and desktop-IPC checks passed 18 cases, with two platform
+skips. They cover the new title and About credit, source and desktop-release
+links, and branded notification text using mocked HTTP. Evidence is under
+`/workspace/tiger-brand-artifacts/`. Native installer builds were not run.
 
 ## 1. Taiga templates (pick the base style per app)
 

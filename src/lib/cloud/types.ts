@@ -1,4 +1,4 @@
-// Cloud projects: the editable document, saved to Open Screenshot Generator's
+// Cloud projects: the editable document, saved to tiger screen shot's
 // own backend rather than to storage the user owns.
 //
 // Three places a project can live now, and they do not compete:

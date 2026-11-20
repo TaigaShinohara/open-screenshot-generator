@@ -156,7 +156,7 @@ export const db = new ProjectDatabase();
 /** Another window opened a newer schema. Let go, and say so. */
 db.on('versionchange', () => {
   console.warn(
-    'Another window of Open Screenshot Generator opened a newer version of the local database. Reload this window to catch up.'
+    'Another window of tiger screen shot opened a newer version of the local database. Reload this window to catch up.'
   );
   db.close();
   return false;
@@ -165,6 +165,6 @@ db.on('versionchange', () => {
 /** We are the newer schema and an older window will not let go. */
 db.on('blocked', () => {
   console.warn(
-    'Another window of Open Screenshot Generator is holding the local database open on an older version. Close it, or reload it, to finish upgrading.'
+    'Another window of tiger screen shot is holding the local database open on an older version. Close it, or reload it, to finish upgrading.'
   );
 });

@@ -316,8 +316,8 @@ export function LookSection({
           <Switch checked={draft.options.screenshots} onCheckedChange={(value) => update((current) => ({ ...current, options: { ...current.options, screenshots: value } }))} aria-label="Show the screenshots" />
         </label>
         <label className="flex items-center justify-between gap-3 text-sm">
-          <span>Say it was made with Open Screenshot Generator</span>
-          <Switch checked={draft.options.credit} onCheckedChange={(value) => update((current) => ({ ...current, options: { ...current.options, credit: value } }))} aria-label="Say it was made with Open Screenshot Generator" />
+          <span>Say it was made with tiger screen shot</span>
+          <Switch checked={draft.options.credit} onCheckedChange={(value) => update((current) => ({ ...current, options: { ...current.options, credit: value } }))} aria-label="Say it was made with tiger screen shot" />
         </label>
       </PanelSection>
     </div>

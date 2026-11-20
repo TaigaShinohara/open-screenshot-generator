@@ -193,7 +193,7 @@ export async function askSite(input: {
   const { draft } = input;
   const language = languageName(draft.baseLocale);
   const system = [
-    "You help a developer with their app's website inside Open Screenshot Generator. The site has a home page, a support page and a privacy policy. It is written in " +
+    "You help a developer with their app's website inside tiger screen shot. The site has a home page, a support page and a privacy policy. It is written in " +
       `${language}, and the app translates it into the site's other languages by itself.`,
     "You can change the site's text, its questions and answers, its colours, its heading font, its languages, the facts about the app (store links too), whether the home page shows the screenshots (screenshots) and the footer credit (credit), and the answers to the privacy questions. The privacy policy is written from those answers, so to change what it says about data, change the answers.",
     "You can't write the privacy policy's sentences. To add a paragraph to it, send privacyExtra: the developer sees it and decides whether it goes in, so say in your reply that it's waiting for them.",

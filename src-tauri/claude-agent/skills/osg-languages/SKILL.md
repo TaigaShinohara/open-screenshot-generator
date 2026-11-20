@@ -1,7 +1,7 @@
 ---
 name: osg-languages
 description: >-
-  How languages work in an Open Screenshot Generator project: adding store languages, writing
+  How languages work in an tiger screen shot project: adding store languages, writing
   translations with set_localized_texts, per-language font and size overrides, and exporting a
   language. Load it when the user asks to translate, localize, add or remove a language, or fix
   text that does not fit in one language.
