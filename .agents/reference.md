@@ -270,7 +270,7 @@ Every run creates an `OperationRecorder` ([operationLog.ts](../src/lib/ai/operat
 - A font added to `AGENT_FONTS` that [fontService.ts](../src/services/fontService.ts) does not load renders as a system fallback with no warning.
 - `getDeviceDescriptor` falls back to the `custom` descriptor (`nativeAspect: 9/16`) for an unknown id, so a `NEW_DESIGN_DEVICE_TYPES` entry with no [deviceRegistry.ts](../src/lib/deviceRegistry.ts) row is sized at the wrong aspect instead of failing loudly.
 - Generated text uses `fontSize = clamp(round(canvasWidth * 0.033), 12, 48)` because `TextElement` renders glyphs at `fontSize / 0.3` px. Do not "fix" that ratio.
-- [src/ai/genkit.ts](../src/ai/genkit.ts) and [src/ai/dev.ts](../src/ai/dev.ts) are dead starter scaffolding (only the unused `genkit:dev` / `genkit:watch` npm scripts reference them). Nothing in the app imports them; the agent does not use Genkit. Do not add flows there.
+- The AI agent uses the Vercel AI SDK and browser-session transport under `src/lib/ai`. It does not use a Genkit or Firebase backend. Do not add Genkit flows.
 
 ---
 

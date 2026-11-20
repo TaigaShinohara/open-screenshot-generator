@@ -11,7 +11,7 @@ The package runs the same editor as the web and desktop apps in a browser it con
 
 ## Before you start
 
-You need Node 20.12 or newer and Chrome, Edge, or Chromium. MP4 export needs Chrome or Edge; PNG export also works with Chromium. Keep screenshots of your app in a folder, in the order you want them used.
+You need Node 22.12 or newer and Chrome, Edge, or Chromium. MP4 export needs Chrome or Edge; PNG export also works with Chromium. Keep screenshots of your app in a folder, in the order you want them used.
 
 You do not need an account or an API key to use templates. The optional AI `design` command needs a key.
 

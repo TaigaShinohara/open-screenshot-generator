@@ -93,7 +93,7 @@ Both versions use the same editor. The desktop app adds features that need acces
 
 ## Command line and coding agents
 
-The CLI needs Node 20.12 or newer and Chrome, Edge, or Chromium. Put screenshots of your app in a folder called `shots`, then run:
+The CLI needs Node 22.12 or newer and Chrome, Edge, or Chromium. Put screenshots of your app in a folder called `shots`, then run:
 
 ```bash
 npx open-screenshot-generator doctor

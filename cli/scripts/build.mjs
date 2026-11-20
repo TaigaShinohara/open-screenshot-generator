@@ -4,7 +4,7 @@
 // modules out of the app's own src/ through the `@` alias (template metadata,
 // store rules, the AI prompt builders) and shipping those as loose TypeScript
 // would mean a second toolchain in the tarball. Bundling is also what keeps
-// the runtime dependency list at three packages.
+// the runtime dependency list limited to browser control and config loading.
 //
 // A second pass writes tools.json, the static tool table the MCP server answers
 // tools/list from. Without it `osg mcp` would have to boot a browser before it
@@ -29,7 +29,7 @@ const pkg = JSON.parse(fs.readFileSync(path.join(cliRoot, 'package.json'), 'utf8
 
 // Everything that must stay a runtime import.
 //
-// The three real dependencies are external so their own native and dynamic
+// Runtime dependencies are external so their own native and dynamic
 // bits keep working. The AI SDK is external for a harder reason: `ai` reaches
 // @ai-sdk/gateway, which reaches @vercel/oidc, which does a dynamic require of
 // a path esbuild cannot see. Inlined, that dies at import time and takes the
@@ -41,6 +41,8 @@ const pkg = JSON.parse(fs.readFileSync(path.join(cliRoot, 'package.json'), 'utf8
 const EXTERNAL = [
   'puppeteer-core',
   '@puppeteer/browsers',
+  'proxy-agent',
+  'yauzl',
   'jiti',
   'ai',
   '@ai-sdk/*',
