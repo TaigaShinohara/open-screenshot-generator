@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 15
     env:
       CARGO_BUILD_JOBS: 2
-      CARGO_TARGET_DIR: ${{ runner.temp }}/glib-target
+      CARGO_TARGET_DIR: target/glib-regression
     steps:
       - uses: actions/checkout@v4
         with:
