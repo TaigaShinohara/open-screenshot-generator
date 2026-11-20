@@ -41,12 +41,12 @@ npx open-screenshot-generator doctor          # no install
 npm i -g open-screenshot-generator            # then: osg doctor
 ```
 
-Node 20.12 or newer, which is what `engines` in `cli/package.json` states. The
-only runtime dependencies are `puppeteer-core`, `@puppeteer/browsers` and `jiti`,
-because every dependency is time an agent waits for on an `npx` cold start.
-`puppeteer-core` downloads no browser; `@puppeteer/browsers` is used only by
-`doctor --install-browser`; `jiti` is what makes an `osg.config.ts` loadable with
-no build step.
+Use Node 22.12 or newer, as specified by `engines` in `cli/package.json`.
+Runtime dependencies cover browser control (`puppeteer-core`), browser downloads
+(`@puppeteer/browsers`, `proxy-agent` and `yauzl`), and config loading (`jiti`).
+`doctor --install-browser` downloads a browser on request. The proxy and ZIP
+helpers support installation behind a proxy and without system archive tools.
+`jiti` loads `osg.config.ts` directly.
 
 ## The shape of a run
 
@@ -804,7 +804,7 @@ A PNG export gets 20 minutes end to end and a video export 45.
 
 ```yaml
 - uses: actions/setup-node@v4
-  with: { node-version: 20 }
+  with: { node-version: 22 }
 
 - run: npx -y open-screenshot-generator@0 doctor --install-browser --json
 

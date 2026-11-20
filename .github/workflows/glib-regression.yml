@@ -1,0 +1,53 @@
+name: GLib security regression
+
+on:
+  pull_request:
+    paths:
+      - 'src-tauri/vendor/glib/**'
+      - 'tests/regressions/glib-variant/**'
+      - '.github/workflows/glib-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  variant-strings:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CARGO_BUILD_JOBS: 2
+      CARGO_TARGET_DIR: ${{ runner.temp }}/glib-target
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.90.0
+      - run: sudo apt-get update && sudo apt-get install -y libglib2.0-dev pkg-config
+      - name: Check the original crate with optimizations
+        env:
+          GLIB_BASELINE: ${{ runner.temp }}/glib-before
+        run: |
+          mkdir -p "$GLIB_BASELINE/src"
+          cp tests/regressions/glib-variant/src/lib.rs "$GLIB_BASELINE/src/lib.rs"
+          cat > "$GLIB_BASELINE/Cargo.toml" <<'TOML'
+          [package]
+          name = "glib-variant-regression"
+          version = "0.1.0"
+          edition = "2021"
+          publish = false
+          [dependencies]
+          glib = "=0.18.5"
+          TOML
+          set +e
+          cargo test --manifest-path "$GLIB_BASELINE/Cargo.toml" --release --lib > "$GLIB_BASELINE/result.log" 2>&1
+          result=$?
+          set -e
+          cat "$GLIB_BASELINE/result.log"
+          if [ "$result" -eq 0 ]; then
+            echo '::warning::The current compiler did not reproduce the original undefined behavior'
+          elif ! grep -Eq 'SIGSEGV|signal: 11' "$GLIB_BASELINE/result.log"; then
+            echo '::error::The original test did not reach the expected crash'
+            exit 1
+          fi
+      - run: cargo test --manifest-path tests/regressions/glib-variant/Cargo.toml --locked --release

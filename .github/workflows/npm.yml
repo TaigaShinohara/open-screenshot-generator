@@ -66,7 +66,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       # Three hand-written manifests that nothing else in CI parses. A trailing
       # comma in one of them breaks /plugin install for every user and would
@@ -144,7 +144,7 @@ jobs:
       # published build.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - run: npm ci
 

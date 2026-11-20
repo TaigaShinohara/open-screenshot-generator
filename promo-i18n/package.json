@@ -10,11 +10,11 @@
     "gen:music": "node scripts/gen-music.js"
   },
   "dependencies": {
-    "@remotion/cli": "4.0.489",
-    "@remotion/google-fonts": "4.0.489",
+    "@remotion/cli": "4.0.545",
+    "@remotion/google-fonts": "4.0.545",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "remotion": "4.0.489"
+    "remotion": "4.0.545"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",

@@ -26,9 +26,9 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-http = "2"
 tauri-plugin-opener = "2"
-# In-app updates from our own update server (updater.rs). Held on 2.12 until a
+# In-app updates from our own update server (updater.rs). Held on 2.14 until a
 # newer release has been tried against the update server.
-tauri-plugin-updater = "~2.12"
+tauri-plugin-updater = "~2.14"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Decoding the PNG the MCP export tools hand over for a file-path export, and
@@ -83,3 +83,6 @@ codegen-units = 1
 lto = true
 opt-level = "s"
 strip = true
+
+[patch.crates-io]
+glib = { path = "vendor/glib" }

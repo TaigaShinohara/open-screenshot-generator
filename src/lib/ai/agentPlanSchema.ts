@@ -232,7 +232,7 @@ export const AGENT_LIMITS = {
 export function formatPlanIssues(error: z.ZodError, limit = 4): string[] {
   return error.issues.slice(0, limit).map((issue) => {
     const path = issue.path
-      .map((seg) => (typeof seg === 'number' ? `[${seg}]` : `.${seg}`))
+      .map((seg) => (typeof seg === 'number' ? `[${seg}]` : `.${String(seg)}`))
       .join('')
       .replace(/^\./, '');
     return path ? `${path}: ${issue.message}` : issue.message;
