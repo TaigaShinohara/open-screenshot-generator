@@ -39,7 +39,7 @@ import { GrowthBrowserPane, useBrowser } from './GrowthBrowserPane';
 import { AssistantAvatar, AssistantComposer, AssistantMessages, useKeyFileDrop, useKeyFilePicker } from './GrowthAssistantChat';
 import { Gated, useGrowthView } from './GrowthShared';
 
-const DESKTOP_URL = 'https://github.com/TaigaShinohara/open-screenshot-generator/releases';
+const DESKTOP_URL = 'https://github.com/TaigaShinohara/tiger-screen-shot/releases';
 
 const STARTERS = [
   'Did my new screenshots work?',

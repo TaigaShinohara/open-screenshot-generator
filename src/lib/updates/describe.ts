@@ -135,7 +135,7 @@ export function manualCheckToast(snapshot: UpdateSnapshot | null): UpdateToast |
 }
 
 /** Where every release can be downloaded by hand, when the server named no page. */
-export const RELEASES_PAGE = 'https://github.com/TaigaShinohara/open-screenshot-generator/releases';
+export const RELEASES_PAGE = 'https://github.com/TaigaShinohara/tiger-screen-shot/releases';
 
 export function downloadPageFor(update: UpdateInfo): string {
   return update.downloadPage?.startsWith('https://') ? update.downloadPage : RELEASES_PAGE;

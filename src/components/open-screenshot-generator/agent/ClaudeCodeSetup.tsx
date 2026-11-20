@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 import type { AgentDetectionState, ClaudeDetection } from '@/lib/claudeCode/types';
 
 export const CLAUDE_CODE_INSTALL_URL = 'https://code.claude.com/docs/en/quickstart';
-export const DESKTOP_DOWNLOAD_URL = 'https://github.com/TaigaShinohara/open-screenshot-generator/releases';
+export const DESKTOP_DOWNLOAD_URL = 'https://github.com/TaigaShinohara/tiger-screen-shot/releases';
 
 export type ClaudeCodeReadiness = 'unknown' | 'checking' | 'ready' | 'missing' | 'signed-out' | 'sandboxed' | 'broken';
 
