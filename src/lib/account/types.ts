@@ -82,13 +82,9 @@ export interface ProjectBundle {
   media: BundledMedia[];
   fonts: BundledFont[];
   /**
-   * Media the manifest still references and this bundle does NOT carry, because
-   * the blob was gone from IndexedDB when it was built.
-   *
-   * Populated by the two producers that build a bundle from something the user
-   * already has (`serializeProject` from IndexedDB, `bundleFromJson` from an
-   * exported file); a bundle read back from a provider leaves it empty. It exists because an incomplete
-   * bundle is dangerous rather than merely lossy: a provider that sweeps blobs
+   * Media or fonts the manifest references but the bundle does not carry.
+   * Local serialization, exported-file parsing and cloud downloads report
+   * missing blobs here. A provider that sweeps blobs
    * the bundle omits (Drive does) would delete the last copy of a recording on
    * the strength of a local row that had already been evicted. A manual save
    * carries on with the sweep switched off; an unattended one refuses.

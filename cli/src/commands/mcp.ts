@@ -40,7 +40,7 @@ export async function run(ctx: CommandContext): Promise<number> {
     const { serveHttp } = await import('../mcp/http.js');
     const port = flagNumber(ctx.args.flags, 'port') ?? 8722;
     step(`MCP over HTTP on http://127.0.0.1:${port}/mcp`);
-    info('Add that URL to your AI client, then leave this running.');
+    info('Configure that URL with an Authorization bearer header matching OSG_MCP_AUTH_TOKEN, then leave this running.');
     await serveHttp(ctx, port);
     return EXIT.ok;
   }

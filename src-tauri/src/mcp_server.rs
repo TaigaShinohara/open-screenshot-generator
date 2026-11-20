@@ -105,6 +105,7 @@ pub struct McpState {
     /// The secret the app's own agent, Claude Code or Codex, sends as a bearer
     /// token. Minted on first use and kept for the life of the process.
     agent_token: Mutex<Option<String>>,
+    external_token: Mutex<Option<String>>,
     /// Proves an event came from this process. Any window allowed to emit
     /// events (the assistant windows, which host third-party sites) could
     /// otherwise emit a tool call in the bridge's name and the editor would run
@@ -178,6 +179,7 @@ fn start<R: Runtime>(app: &AppHandle<R>, state: &McpState) -> Result<McpStatus, 
         }
     }
 
+    external_token(app, state)?;
     let (server, port) = bind_server()?;
     let server = Arc::new(server);
     let shutdown = Arc::new(AtomicBool::new(false));
@@ -189,7 +191,7 @@ fn start<R: Runtime>(app: &AppHandle<R>, state: &McpState) -> Result<McpStatus, 
     let next_id = state.next_id.clone();
 
     let thread = std::thread::spawn(move || {
-        accept_loop(accept_server, accept_shutdown, app_handle, pending, next_id);
+        accept_loop(accept_server, accept_shutdown, app_handle, pending, next_id, port);
     });
 
     *guard = Some(RunningServer { port, shutdown, thread: Some(thread) });
@@ -255,6 +257,7 @@ fn accept_loop<R: Runtime>(
     app: AppHandle<R>,
     pending: Pending,
     next_id: Arc<AtomicU64>,
+    port: u16,
 ) {
     while !shutdown.load(Ordering::Relaxed) {
         match server.recv_timeout(Duration::from_millis(400)) {
@@ -262,27 +265,12 @@ fn accept_loop<R: Runtime>(
                 let app = app.clone();
                 let pending = pending.clone();
                 let next_id = next_id.clone();
-                std::thread::spawn(move || handle_request(request, app, pending, next_id));
+                std::thread::spawn(move || handle_request(request, app, pending, next_id, port));
             }
             Ok(None) => {} // timed out; loop and re-check the shutdown flag
             Err(_) => break,
         }
     }
-}
-
-fn cors_headers() -> Vec<Header> {
-    // Native MCP clients do not send an Origin; browser-hosted ones do. A
-    // permissive localhost policy keeps both happy without gating anything of
-    // value (the server is bound to 127.0.0.1 already).
-    [
-        ("Access-Control-Allow-Origin", "*"),
-        ("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS"),
-        ("Access-Control-Allow-Headers", "Content-Type, Mcp-Session-Id, Mcp-Protocol-Version, Authorization"),
-        ("Access-Control-Expose-Headers", "Mcp-Session-Id"),
-    ]
-    .iter()
-    .filter_map(|(k, v)| Header::from_bytes(k.as_bytes(), v.as_bytes()).ok())
-    .collect()
 }
 
 fn respond_json(request: Request, status: u16, body: String, session_id: Option<String>) {
@@ -295,17 +283,11 @@ fn respond_json(request: Request, status: u16, body: String, session_id: Option<
             response = response.with_header(h);
         }
     }
-    for h in cors_headers() {
-        response = response.with_header(h);
-    }
     let _ = request.respond(response);
 }
 
 fn respond_empty(request: Request, status: u16) {
-    let mut response = Response::empty(status);
-    for h in cors_headers() {
-        response = response.with_header(h);
-    }
+    let response = Response::empty(status);
     let _ = request.respond(response);
 }
 
@@ -343,19 +325,62 @@ fn bearer_matches<'a>(auth_values: impl IntoIterator<Item = &'a str>, token: Opt
         return false;
     };
     let expected = format!("Bearer {token}");
-    auth_values.into_iter().any(|value| value == expected)
+    let values: Vec<_> = auth_values.into_iter().collect();
+    values.len() == 1 && values[0] == expected
 }
 
-/// Who may call the tools.
-///
-/// With the Settings switch on, any local client: the user opened the tools up
-/// on purpose. With it off, the server is only running because the app's own
-/// Claude Code agent needed it, and only a request carrying that agent's token
-/// gets through. Otherwise starting the agent would quietly hand every program
-/// on the machine, and every web page the browser lets reach localhost, a way
-/// to read and rewrite the user's projects.
-fn authorized(agent: bool, switch_on: bool) -> bool {
-    agent || switch_on
+/// External clients use a different credential from the privileged built-in agent.
+fn authorized(agent: bool, switch_on: bool, external: bool) -> bool {
+    agent || (switch_on && external)
+}
+
+fn trusted_transport<'a>(hosts: impl IntoIterator<Item = &'a str>, origins: impl IntoIterator<Item = &'a str>, port: u16) -> bool {
+    let hosts: Vec<_> = hosts.into_iter().collect();
+    hosts.len() == 1
+        && (hosts[0] == format!("127.0.0.1:{port}") || hosts[0] == format!("localhost:{port}"))
+        && origins.into_iter().next().is_none()
+}
+
+fn external_token<R: Runtime>(app: &AppHandle<R>, state: &McpState) -> Result<String, String> {
+    let mut guard = state.external_token.lock().unwrap();
+    if let Some(token) = guard.as_ref() { return Ok(token.clone()); }
+    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join("mcp-auth-token");
+    let token = load_external_token(&path)?;
+    *guard = Some(token.clone());
+    Ok(token)
+}
+
+fn load_external_token(path: &std::path::Path) -> Result<String, String> {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    match options.open(path) {
+        Ok(mut file) => {
+            let token = fresh_token();
+            file.write_all(token.as_bytes()).map_err(|e| e.to_string())?;
+            Ok(token)
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            let value = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+            if value.len() != 64 || !value.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return Err("The MCP credential file is invalid".into());
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?;
+            }
+            Ok(value)
+        }
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 /// 128 bits of OS randomness in a 64-character string. RandomState seeds its
@@ -385,7 +410,25 @@ fn handle_request<R: Runtime>(
     app: AppHandle<R>,
     pending: Pending,
     next_id: Arc<AtomicU64>,
+    port: u16,
 ) {
+    let headers = request.headers();
+    if !trusted_transport(
+        headers.iter().filter(|h| h.field.equiv("Host")).map(|h| h.value.as_str()),
+        headers.iter().filter(|h| h.field.equiv("Origin")).map(|h| h.value.as_str()),
+        port,
+    ) {
+        return respond_empty(request, 403);
+    }
+    let agent = from_agent(&app, &request);
+    let state = app.state::<McpState>();
+    let external = bearer_matches(
+        request.headers().iter().filter(|h| h.field.equiv("Authorization")).map(|h| h.value.as_str()),
+        state.external_token.lock().unwrap().as_deref(),
+    );
+    if !authorized(agent, crate::settings::current(&app).mcp_server_enabled, external) {
+        return respond_json(request, 401, rpc_error(Value::Null, -32001, "A valid MCP bearer token is required").to_string(), None);
+    }
     match request.method() {
         Method::Options => return respond_empty(request, 204),
         // We never open a server->client SSE stream, so there is nothing to GET.
@@ -394,21 +437,6 @@ fn handle_request<R: Runtime>(
         Method::Delete => return respond_empty(request, 200),
         Method::Post => {}
         _ => return respond_empty(request, 405),
-    }
-
-    let agent = from_agent(&app, &request);
-    if !authorized(agent, crate::settings::current(&app).mcp_server_enabled) {
-        return respond_json(
-            request,
-            401,
-            rpc_error(
-                Value::Null,
-                -32001,
-                "This server only answers the app's own agent right now. Turn on Settings > Run MCP server for external AI tools to connect other clients.",
-            )
-            .to_string(),
-            None,
-        );
     }
 
     // Buffer the body (size-capped).
@@ -699,6 +727,18 @@ pub fn abs_mcp_status<R: Runtime>(app: AppHandle<R>, state: tauri::State<'_, Mcp
     status_of(&state)
 }
 
+/// Only the editor can copy credentials into the user's native client config.
+#[tauri::command]
+pub fn abs_mcp_connection_config<R: Runtime>(app: AppHandle<R>, window: tauri::Window<R>, state: tauri::State<'_, McpState>) -> Result<Value, String> {
+    if window.label() != "main" { return Err("Only the editor can read MCP connection settings".into()); }
+    let status = abs_mcp_status(app.clone(), state.clone());
+    let url = status.url.ok_or("Turn on the MCP server before copying its settings")?;
+    let token = external_token(&app, &state)?;
+    let header_file = app.path().app_config_dir().map_err(|e| e.to_string())?.join("mcp-auth-headers");
+    crate::claude_code::write_private(&header_file, format!("Authorization: Bearer {token}\n").as_bytes())?;
+    Ok(json!({ "url": url, "headers": { "Authorization": format!("Bearer {token}") }, "headerFile": header_file }))
+}
+
 /// The bridge nonce, for the editor window's MCP listener and Claude Code
 /// transport. Refused anywhere else: a window that could read it could forge
 /// the events it protects.
@@ -781,8 +821,8 @@ mod tests {
     fn only_the_agents_token_marks_a_request_as_the_agent() {
         let token = Some("0123abcd");
         assert!(bearer_matches(["Bearer 0123abcd"], token));
-        // One of several Authorization headers is enough.
-        assert!(bearer_matches(["Basic eA==", "Bearer 0123abcd"], token));
+        // Ambiguous credentials are refused.
+        assert!(!bearer_matches(["Basic eA==", "Bearer 0123abcd"], token));
         for wrong in ["Bearer 0123abc", "Bearer 0123abcd ", "bearer 0123abcd", "0123abcd", "Bearer", ""] {
             assert!(!bearer_matches([wrong], token), "{wrong:?}");
         }
@@ -794,10 +834,44 @@ mod tests {
 
     #[test]
     fn the_agent_gets_through_with_the_switch_off_and_nobody_else_does() {
-        assert!(authorized(true, false));
-        assert!(authorized(true, true));
-        assert!(authorized(false, true));
-        assert!(!authorized(false, false));
+        assert!(authorized(true, false, false));
+        assert!(authorized(true, true, false));
+        assert!(authorized(false, true, true));
+        assert!(!authorized(false, true, false));
+        assert!(!authorized(false, false, false));
+        assert!(!authorized(false, false, true));
+    }
+
+    #[test]
+    fn http_rejects_browser_origins_and_rebound_hosts() {
+        assert!(trusted_transport(["127.0.0.1:8722"], [], 8722));
+        assert!(trusted_transport(["localhost:8722"], [], 8722));
+        for host in ["attacker.example:8722", "127.0.0.1:9999", "localhost", "127.0.0.1:8722.attacker.example"] {
+            assert!(!trusted_transport([host], [], 8722));
+        }
+        assert!(!trusted_transport([], [], 8722));
+        assert!(!trusted_transport(["localhost:8722", "localhost:8722"], [], 8722));
+        for origin in ["https://attacker.example", "null", "http://localhost:8722", ""] {
+            assert!(!trusted_transport(["localhost:8722"], [origin], 8722));
+        }
+    }
+
+    #[test]
+    fn external_credentials_persist_privately_and_corruption_fails_closed() {
+        let dir = std::env::temp_dir().join(format!("osg-mcp-auth-{}", fresh_token()));
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("credential");
+        let first = load_external_token(&path).unwrap();
+        assert_eq!(first.len(), 64);
+        assert_eq!(load_external_token(&path).unwrap(), first);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        std::fs::write(&path, "corrupted").unwrap();
+        assert!(load_external_token(&path).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

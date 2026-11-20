@@ -92,6 +92,7 @@ pub fn run() {
             mcp_server::abs_mcp_start,
             mcp_server::abs_mcp_stop,
             mcp_server::abs_mcp_status,
+            mcp_server::abs_mcp_connection_config,
             mcp_server::abs_mcp_respond,
             mcp_server::abs_mcp_write_png,
             mcp_server::abs_write_export_png,

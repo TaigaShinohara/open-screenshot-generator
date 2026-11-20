@@ -32,6 +32,7 @@ import {
   startRelayMcpBridge,
   type RelayState,
 } from '@/lib/mcp/relayBridge';
+import { nativeClientConfig, type NativeMcpClient } from '@/lib/mcp/clientConfig';
 import type { McpDesignApi } from '@/lib/mcp/desktopMcpServer';
 import {
   Dialog,
@@ -45,6 +46,7 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/
 import { Separator } from '@/components/ui/separator';
 import {
   getMcpStatus,
+  getMcpConnectionConfig,
   listenMcpStatus,
   getMcpToolSummaries,
   type McpServerStatus as Status,
@@ -56,7 +58,8 @@ async function copyText(text: string): Promise<boolean> {
   // WebView2 (and every browser we target) is Chromium, so the async Clipboard
   // API is available; the click gives us the required user gesture.
   try {
-    await navigator.clipboard?.writeText(text);
+    if (!navigator.clipboard?.writeText) return false;
+    await navigator.clipboard.writeText(text);
     return true;
   } catch {
     return false;
@@ -64,7 +67,7 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 // Small copy-to-clipboard button with a transient check state.
-function CopyButton({ value, label }: { value: string; label: string }) {
+function CopyButton({ value, label, getValue }: { value: string; label: string; getValue?: () => Promise<string> }) {
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
   return (
@@ -72,11 +75,12 @@ function CopyButton({ value, label }: { value: string; label: string }) {
       type="button"
       title={`Copy ${label}`}
       onClick={async () => {
-        if (await copyText(value)) {
+        try {
+          if (!await copyText(getValue ? await getValue() : value)) throw new Error('Clipboard unavailable');
           setCopied(true);
           setTimeout(() => setCopied(false), 1500);
-        } else {
-          toast({ title: 'Could not copy', description: value });
+        } catch {
+          toast({ title: 'Could not copy', description: 'Check clipboard access and try again' });
         }
       }}
       className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -112,14 +116,14 @@ function ExamplePrompt({ text }: { text: string }) {
 }
 
 // A copyable code block (command or config snippet).
-function CodeBlock({ code }: { code: string }) {
+function CodeBlock({ code, getValue }: { code: string; getValue?: () => Promise<string> }) {
   return (
     <div className="relative rounded-md border border-border bg-muted/40">
       <pre className="max-w-full overflow-x-auto p-2.5 pr-9 text-[11px] leading-relaxed">
         <code>{code}</code>
       </pre>
       <div className="absolute right-1 top-1">
-        <CopyButton value={code} label="snippet" />
+        <CopyButton value={code} label="snippet" getValue={getValue} />
       </div>
     </div>
   );
@@ -187,6 +191,28 @@ function clientGuides(url: string) {
       ),
     },
   ];
+}
+
+function nativeClientGuides(url: string) {
+  const clients: Array<{ id: NativeMcpClient; name: string; file: string }> = [
+    { id: 'claude-code', name: 'Claude Code', file: '.mcp.json in your project' },
+    { id: 'claude-desktop', name: 'Claude Desktop', file: 'claude_desktop_config.json' },
+    { id: 'vscode', name: 'VS Code (Copilot)', file: '.vscode/mcp.json' },
+    { id: 'cursor', name: 'Cursor', file: '~/.cursor/mcp.json' },
+  ];
+  return clients.map(({ id, name, file }) => ({
+    id,
+    name,
+    body: (
+      <div className="grid gap-2">
+        <p className="text-xs text-muted-foreground">Copy these settings into {file}, then restart the client. The copy includes your local connection credential.</p>
+        <CodeBlock
+          code={nativeClientConfig(id, { url, headers: { Authorization: 'Bearer <included when copied>' }, headerFile: '<local credential file included when copied>' })}
+          getValue={async () => nativeClientConfig(id, await getMcpConnectionConfig())}
+        />
+      </div>
+    ),
+  }));
 }
 
 export function McpServerStatus({
@@ -260,7 +286,7 @@ export function McpServerStatus({
   const running = desktop ? status.running : relayState === 'connected';
   const url = desktop ? status.url ?? DEFAULT_URL : relayClientUrl(code || '…');
   const tools = getMcpToolSummaries();
-  const guides = clientGuides(url);
+  const guides = desktop ? nativeClientGuides(url) : clientGuides(url);
   const connecting = web && connect && relayState !== 'connected';
   const pillLabel = desktop
     ? running
@@ -357,6 +383,11 @@ export function McpServerStatus({
               <code className="min-w-0 flex-1 truncate text-xs">{url}</code>
               <CopyButton value={url} label="URL" />
             </div>
+            {desktop && (
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                Native clients need the authenticated settings below. Keep copied settings private. Browser connections are blocked.
+              </p>
+            )}
             {web && (
               <p className="text-[11px] leading-snug text-muted-foreground">
                 The code in this link is what lets your AI client find this tab, so treat it like a password and paste it

@@ -22,10 +22,11 @@ import {
   hashDocument,
   putAccountLink,
 } from './links';
-import { getSession, setSession } from './store';
+import { getSession, getSessionGeneration, setSession, updateSessionIfCurrent } from './store';
 import {
   AccountAuthError,
   AccountBlockedError,
+  AccountCancelledError,
   AccountConflictError,
   type AccountSession,
   type CloudProvider,
@@ -48,18 +49,36 @@ export function getProvider(id: CloudProviderId): CloudProvider {
  * Refresh the stored session's token if needed and persist the result, so a
  * renewed access token survives the next reload.
  */
+const refreshingSessions = new WeakMap<AccountSession, Promise<AccountSession>>();
+
 export async function withFreshSession(session: AccountSession): Promise<AccountSession> {
-  const provider = getProvider(session.provider);
-  const fresh = await provider.ensureFreshSession(session);
-  if (fresh.accessToken !== session.accessToken || fresh.expiresAt !== session.expiresAt) {
-    setSession(fresh);
-  }
-  return fresh;
+  if (getSession() !== session) throw new AccountCancelledError();
+  const running = refreshingSessions.get(session);
+  if (running) return running;
+  const generation = getSessionGeneration();
+  const pending = Promise.resolve().then(async () => {
+    try {
+      if (getSessionGeneration() !== generation) throw new AccountCancelledError();
+      const fresh = await getProvider(session.provider).ensureFreshSession(session);
+      if (getSessionGeneration() !== generation) throw new AccountCancelledError();
+      if (fresh.accessToken !== session.accessToken || fresh.expiresAt !== session.expiresAt) {
+        if (!updateSessionIfCurrent(generation, fresh)) throw new AccountCancelledError();
+      }
+      return fresh;
+    } catch (error) {
+      if (getSessionGeneration() !== generation) throw new AccountCancelledError();
+      throw error;
+    } finally {
+      refreshingSessions.delete(session);
+    }
+  });
+  refreshingSessions.set(session, pending);
+  return pending;
 }
 
 /** Sign-in expired: drop the stored session so the UI falls back to signed-out. */
-function handleAuthFailure(error: unknown): never {
-  if (error instanceof AccountAuthError) setSession(null);
+function handleAuthFailure(error: unknown, generation: number, session: AccountSession): never {
+  if (error instanceof AccountAuthError && getSessionGeneration() === generation && getSession() === session) setSession(null);
   throw error;
 }
 
@@ -81,14 +100,17 @@ export async function saveProjectToAccount(
   options: SaveToAccountOptions = {}
 ): Promise<CloudProjectSummary> {
   const { onProgress, saveAsCopy } = options;
+  const generation = getSessionGeneration();
   const stored = getSession();
   if (!stored) throw new AccountAuthError('Connect an account first.');
 
   const project = await db.projects.get(projectId);
   if (!project) throw new Error('This project is not in your local library yet.');
 
+  let activeSession = stored;
   try {
     const session = await withFreshSession(stored);
+    activeSession = session;
     onProgress?.('Packaging project', 0);
     const bundle = await serializeProject(project, onProgress);
     const outgoing = saveAsCopy
@@ -161,7 +183,7 @@ export async function saveProjectToAccount(
     }
     return saved;
   } catch (error) {
-    return handleAuthFailure(error);
+    return handleAuthFailure(error, generation, activeSession);
   }
 }
 
@@ -327,17 +349,23 @@ export async function loadProjectFromAccount(
   /** Passed to importBundle: runs the write of the local row, and can refuse it. */
   guardRowWrite?: (write: () => Promise<unknown>) => Promise<unknown>
 ): Promise<Project> {
+  const generation = getSessionGeneration();
   const stored = getSession();
   if (!stored) throw new AccountAuthError('Connect an account first.');
 
+  let activeSession = stored;
   try {
     const session = await withFreshSession(stored);
+    activeSession = session;
     const provider = getProvider(session.provider);
     // Two loops, one bar: the download counts to three quarters and writing the
     // blobs to this device counts the rest. Reported raw they would each run 0
     // to 100 and the bar would restart halfway through the wait.
     const progress = splitProgress(onProgress);
     const bundle = await provider.loadProject(session, remoteId, progress.download);
+    if (bundle.missingMedia.length) {
+      throw new AccountBlockedError('This copy is missing files. Save it again from a device with the complete project');
+    }
     // Same normalization the local load path runs, so a project saved by an
     // older build comes back on the current element shapes. ensureUniqueElementIds
     // repairs boards an older Duplicate Artboard aliased, and normalizeLocalization
@@ -380,31 +408,37 @@ export async function loadProjectFromAccount(
     });
     return project;
   } catch (error) {
-    return handleAuthFailure(error);
+    return handleAuthFailure(error, generation, activeSession);
   }
 }
 
 export async function listAccountProjects(): Promise<CloudProjectSummary[]> {
+  const generation = getSessionGeneration();
   const stored = getSession();
   if (!stored) return [];
+  let activeSession = stored;
   try {
     const session = await withFreshSession(stored);
+    activeSession = session;
     return await getProvider(session.provider).listProjects(session);
   } catch (error) {
-    return handleAuthFailure(error);
+    return handleAuthFailure(error, generation, activeSession);
   }
 }
 
 export async function deleteAccountProject(remoteId: string): Promise<void> {
+  const generation = getSessionGeneration();
   const stored = getSession();
   if (!stored) throw new AccountAuthError('Connect an account first.');
+  let activeSession = stored;
   try {
     const session = await withFreshSession(stored);
+    activeSession = session;
     await getProvider(session.provider).deleteProject(session, remoteId);
     // The copy is gone, so the permission slip to keep writing to it is too.
     await deleteAccountLinkByRemote(remoteId);
   } catch (error) {
-    handleAuthFailure(error);
+    handleAuthFailure(error, generation, activeSession);
   }
 }
 

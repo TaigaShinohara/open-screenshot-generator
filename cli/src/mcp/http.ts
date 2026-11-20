@@ -1,66 +1,30 @@
-/**
- * MCP over Streamable HTTP, on loopback.
- *
- * The desktop app already hosts this exact transport from Rust
- * (src-tauri/src/mcp_server.rs) so that a client configured once keeps working
- * whether the design tools are being served by the app or by this CLI. That is
- * only true if the verb matrix matches, so it is copied rather than
- * reinvented:
- *
- *   OPTIONS  204, CORS preflight headers, no body
- *   GET      405, this server never opens a server to client SSE stream
- *   DELETE   200, session teardown is a no-op because the state lives in the page
- *   POST     the messages
- *   other    405
- *
- *   a notification or a stray response  202 with no body, never bridged
- *   `initialize`                        200 plus an Mcp-Session-Id header
- *
- * OPTIONS is the one worth being careful about. Native clients never send a
- * preflight, so every one of them passes whatever we do; a browser hosted
- * client sends one, and if it does not come back 204 with the right headers
- * the real request is never made and the failure surfaces as "no response"
- * with nothing in any log. It is invisible until the one client that matters
- * hits it.
- */
+/** Authenticated Streamable HTTP for native clients on loopback. */
 import http from 'node:http';
+import { httpRequestStatus, validHttpToken } from './httpSecurity.js';
 import type { AddressInfo } from 'node:net';
 import type { CommandContext } from '../context.js';
 import { EXIT, usageError } from '../errors.js';
 import { debug, emit, info, ok, warn } from '../log.js';
 import { dispatch, isJsonRpcRequest, lazySession, rpcError, toolCount } from './tools.js';
 
-/** Never 0.0.0.0. This server has no auth and hands out the whole design tool surface. */
 const HOST = '127.0.0.1';
 
 /** Matches MAX_BODY in mcp_server.rs: generous, because arguments carry base64 images. */
 const MAX_BODY = 32 * 1024 * 1024;
 
-/**
- * Native MCP clients send no Origin, browser hosted ones do. A permissive
- * policy on a loopback bind gates nothing of value and keeps both working,
- * which is the same call the Rust server makes.
- */
-const CORS_HEADERS: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Mcp-Session-Id, Mcp-Protocol-Version, Authorization',
-  'Access-Control-Expose-Headers': 'Mcp-Session-Id',
-};
-
-export async function serveHttp(ctx: CommandContext, port: number): Promise<number> {
+export function createHttpServer(ctx: CommandContext, token: string): http.Server {
+  if (!validHttpToken(token)) throw usageError('MCP HTTP needs a token of at least 32 URL-safe characters.');
   const getSession = lazySession(ctx);
   let sessionCounter = 0;
 
   const sendEmpty = (res: http.ServerResponse, status: number) => {
-    res.writeHead(status, CORS_HEADERS);
+    res.writeHead(status);
     res.end();
   };
 
   const sendJson = (res: http.ServerResponse, status: number, payload: unknown, sessionId?: string) => {
     const body = Buffer.from(JSON.stringify(payload), 'utf8');
     res.writeHead(status, {
-      ...CORS_HEADERS,
       'Content-Type': 'application/json',
       'Content-Length': String(body.length),
       ...(sessionId ? { 'Mcp-Session-Id': sessionId } : {}),
@@ -136,6 +100,12 @@ export async function serveHttp(ctx: CommandContext, port: number): Promise<numb
   const server = http.createServer((req, res) => {
     void (async () => {
       try {
+        const port = (server.address() as AddressInfo).port;
+        const status = httpRequestStatus(req.rawHeaders, port, token);
+        if (status !== 200) {
+          sendEmpty(res, status);
+          return;
+        }
         // The path is not checked, exactly as the Rust server does not check
         // it. Clients disagree about whether the endpoint is /mcp or /, and
         // there is nothing else on this port to collide with.
@@ -171,6 +141,15 @@ export async function serveHttp(ctx: CommandContext, port: number): Promise<numb
   server.keepAliveTimeout = 120_000;
   server.headersTimeout = 125_000;
 
+  return server;
+}
+
+export async function serveHttp(ctx: CommandContext, port: number): Promise<number> {
+  const token = process.env.OSG_MCP_AUTH_TOKEN;
+  if (!validHttpToken(token)) {
+    throw usageError('MCP HTTP needs OSG_MCP_AUTH_TOKEN with at least 32 URL-safe characters.', 'Provide it through your secret manager, or use --stdio.');
+  }
+  const server = createHttpServer(ctx, token);
   await new Promise<void>((resolve, reject) => {
     const onError = (error: NodeJS.ErrnoException) => {
       reject(

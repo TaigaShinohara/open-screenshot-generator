@@ -14,6 +14,7 @@ const STORAGE_KEY = 'open-screenshot-generator.account';
 
 let current: AccountSession | null = null;
 let hydrated = false;
+let generation = 0;
 const listeners = new Set<() => void>();
 
 function read(): AccountSession | null {
@@ -52,9 +53,26 @@ export function getSession(): AccountSession | null {
 
 export function setSession(session: AccountSession | null): void {
   hydrate();
+  generation += 1;
+  publishSession(session);
+}
+
+function publishSession(session: AccountSession | null): void {
   current = session;
   write(session);
   listeners.forEach((fn) => fn());
+}
+
+export function getSessionGeneration(): number {
+  hydrate();
+  return generation;
+}
+
+export function updateSessionIfCurrent(expected: number, session: AccountSession): boolean {
+  hydrate();
+  if (generation !== expected) return false;
+  publishSession(session);
+  return true;
 }
 
 export function clearSession(): void {

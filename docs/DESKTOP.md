@@ -532,11 +532,20 @@ that agent.
 
 **Connecting a client.** The server speaks MCP over **Streamable HTTP** at
 `http://127.0.0.1:8722/mcp` (localhost only; the port scans upward from 8722 if
-busy, and the real URL is shown in the toast / `console.info`). For Claude Code:
+busy, and the real URL is shown in the status dialog). Turn the server on, open
+the MCP status pill, and copy the settings for your client. A URL alone no longer
+grants access. The copied JSON includes an Authorization header for Claude Code,
+VS Code and Cursor. Keep that configuration private and out of Git. Claude
+Desktop's stdio bridge uses a private local header file, keeping the credential
+out of process arguments. The snippets shown in the dialog contain placeholders;
+only the copy action reads the credential.
 
-```
-claude mcp add --transport http open-screenshot-generator http://127.0.0.1:8722/mcp
-```
+The external-client token persists in the app configuration directory in
+`mcp-auth-token`. On Unix, this file and the bridge's `mcp-auth-headers` file have
+mode 0600. This credential is separate from the built-in agent's token and does
+not grant its code-folder privileges. Requests carrying any Origin header or an
+unexpected Host are refused, and responses contain no CORS permission headers.
+Use native clients for the local server; browser clients can use the web relay.
 
 **Tools.**
 
@@ -885,8 +894,9 @@ per-spawn settings file, turns hooks off whatever declares them.
 through the same local MCP server as any other client. Starting the agent calls
 `mcp_server::ensure_running`, which starts the server whether or not
 **Settings ▸ Run MCP server for external AI tools** is on, and mints a bearer
-token for the agent (128 bits of OS randomness, one per app launch). With the switch on, any
-local client is accepted. With it off, only a request carrying that token gets
+token for the agent (128 bits of OS randomness, one per app launch). With the switch on,
+external clients also need their separate persistent bearer token. With it off,
+only a request carrying the built-in agent's token gets
 through, and anything else gets `401`. Turning the switch off while an agent
 process is running or starting keeps the socket up for it and reports the server
 as off: the saved setting, the menu check, the status pill and `abs_mcp_status`
@@ -1231,7 +1241,10 @@ empty client area is the black rectangle you see when launching an unprepared
 Tauri app. The sequence that avoids it:
 
 1. `main` is declared `"visible": false` in `tauri.conf.json` and loads Next.js
-   off-screen.
+   off-screen. Its `backgroundThrottling` is `disabled`, keeping WKWebView's
+   JavaScript active while the window is hidden or inactive on macOS 14+.
+   Without this, startup can leave a blank window that recovers when the
+   Web Inspector wakes the view. Other windows keep their default policy.
 2. `splash.rs` builds the `splashscreen` window **hidden**, pointing at
    `splash.html`, and shows it from `on_page_load(Finished)`, so the first
    frame the user sees is already painted.

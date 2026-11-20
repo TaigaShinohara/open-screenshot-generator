@@ -36,6 +36,7 @@ export interface MediaAsset {
   height?: number;
   duration?: number; // seconds
   createdAt: Date;
+  hiddenFromLibrary?: boolean;
 }
 
 export interface VideoProbeResult {

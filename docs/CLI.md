@@ -462,6 +462,13 @@ Runs an MCP server exposing all 49 design tools. See
 | `--port <n>` | With `--http`. Default 8722, scanning upward if busy |
 | `--headed` | Show the window so a person can watch the agent work |
 
+HTTP mode requires `OSG_MCP_AUTH_TOKEN`, at least 32 URL-safe characters supplied
+through your secret manager. Configure the client with an `Authorization: Bearer`
+header containing that token. The server refuses requests without credentials,
+browser requests carrying an Origin header, and Host headers that do not match
+its loopback address and port. It sends no CORS permission headers. The default
+stdio transport needs no HTTP credential.
+
 ### `osg install`
 
 Detects the coding agents on this machine and writes the MCP entry into the right
