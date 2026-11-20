@@ -2937,7 +2937,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'delete_asset',
-    description: 'Forget an uploaded asset. Elements already placed keep their copy of the image.',
+    description: 'Remove an image from the uploaded assets list. Keeps its image data for elements and saved versions that use it.',
     inputSchema: {
       type: 'object',
       properties: { assetId: { type: 'string', description: 'The id (or "asset:<id>" reference) from upload_asset.' } },
@@ -3697,6 +3697,18 @@ export interface McpServerStatus {
   running: boolean;
   port: number | null;
   url: string | null;
+}
+
+export interface McpConnectionConfig {
+  url: string;
+  headers: { Authorization: string };
+  headerFile: string;
+}
+
+/** Read credentials only when the user copies a native client configuration. */
+export async function getMcpConnectionConfig(): Promise<McpConnectionConfig> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<McpConnectionConfig>('abs_mcp_connection_config');
 }
 
 /** Read the current server status (running + URL) from the Rust side. */

@@ -134,7 +134,7 @@ export async function saveImageAsset(
 export async function listImageAssets(): Promise<StoredAsset[]> {
   const rows = await db.media.toArray();
   return rows
-    .filter((row) => row.id.startsWith(ASSET_ID_PREFIX))
+    .filter((row) => row.id.startsWith(ASSET_ID_PREFIX) && !row.hiddenFromLibrary)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .map(summarize);
 }
@@ -142,8 +142,9 @@ export async function listImageAssets(): Promise<StoredAsset[]> {
 export async function deleteImageAsset(assetId: string): Promise<boolean> {
   const id = assetId.startsWith(ASSET_REF_PREFIX) ? assetId.slice(ASSET_REF_PREFIX.length) : assetId;
   const row = await db.media.get(id);
-  if (!row || !row.id.startsWith(ASSET_ID_PREFIX)) return false;
-  await db.media.delete(id);
+  if (!row || !row.id.startsWith(ASSET_ID_PREFIX) || row.hiddenFromLibrary) return false;
+  // Projects, unsaved edits and versions share this blob by reference.
+  await db.media.update(id, { hiddenFromLibrary: true });
   return true;
 }
 

@@ -649,20 +649,12 @@ export const googleDriveProvider: CloudProvider = {
     const byName = new Map(children.map((child) => [child.name, child.id]));
 
     const total = bundle.media.length + bundle.fonts.length + 1;
-    onProgress?.('Uploading project', 1 / total);
-    const manifestFile = await uploadFile(session, {
-      name: 'project.json',
-      parentId: folderId,
-      blob: new Blob([JSON.stringify(bundle.manifest)], { type: 'application/json' }),
-      mimeType: 'application/json',
-      existingId: byName.get('project.json'),
-    });
 
     for (const [index, item] of bundle.media.entries()) {
       const fileName = `${MEDIA_PREFIX}${item.meta.id}`;
       // Same id means the same recording, so skip anything already uploaded.
       if (byName.has(fileName)) continue;
-      onProgress?.(`Uploading media ${index + 1} of ${bundle.media.length}`, (index + 2) / total);
+      onProgress?.(`Uploading media ${index + 1} of ${bundle.media.length}`, (index + 1) / total);
       await uploadFile(session, {
         name: fileName,
         parentId: folderId,
@@ -676,7 +668,7 @@ export const googleDriveProvider: CloudProvider = {
       if (byName.has(fileName)) continue;
       onProgress?.(
         `Uploading font ${index + 1} of ${bundle.fonts.length}`,
-        (bundle.media.length + index + 2) / total
+        (bundle.media.length + index + 1) / total
       );
       await uploadFile(session, {
         name: fileName,
@@ -685,6 +677,15 @@ export const googleDriveProvider: CloudProvider = {
         mimeType: font.meta.mimeType || 'application/octet-stream',
       });
     }
+
+    onProgress?.('Saving project', (total - 1) / total);
+    const manifestFile = await uploadFile(session, {
+      name: 'project.json',
+      parentId: folderId,
+      blob: new Blob([JSON.stringify(bundle.manifest)], { type: 'application/json' }),
+      mimeType: 'application/json',
+      existingId: byName.get('project.json'),
+    });
 
     // Drop blobs the project no longer references so Drive does not accumulate
     // dead recordings and fonts across saves. Skipped for an unattended push:
@@ -783,10 +784,11 @@ export const googleDriveProvider: CloudProvider = {
     const manifest = JSON.parse(await manifestBlob.text()) as ProjectManifest;
 
     const media: ProjectBundle['media'] = [];
+    const missingMedia: string[] = [];
     const metas = manifest.media ?? [];
     for (const [index, meta] of metas.entries()) {
       const file = children.find((child) => child.name === `${MEDIA_PREFIX}${meta.id}`);
-      if (!file) continue; // uploaded from a build that skipped media
+      if (!file) { missingMedia.push(meta.id); continue; }
       onProgress?.(`Downloading media ${index + 1} of ${metas.length}`, (index + 1) / (metas.length + 1));
       media.push({ meta, blob: await downloadBlob(session, file.id) });
     }
@@ -796,13 +798,13 @@ export const googleDriveProvider: CloudProvider = {
     const fonts: ProjectBundle['fonts'] = [];
     for (const meta of manifest.fonts ?? []) {
       const file = children.find((child) => child.name === `${FONT_PREFIX}${meta.id}`);
-      if (!file) continue;
+      if (!file) { missingMedia.push(meta.id); continue; }
       onProgress?.(`Downloading font ${meta.family}`);
       fonts.push({ meta, blob: await downloadBlob(session, file.id) });
     }
 
     onProgress?.('Loaded', 1);
-    return { manifest, media, fonts, missingMedia: [] };
+    return { manifest, media, fonts, missingMedia };
   },
 
   async deleteProject(session: AccountSession, remoteId: string): Promise<void> {
