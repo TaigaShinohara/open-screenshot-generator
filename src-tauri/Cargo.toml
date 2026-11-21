@@ -48,6 +48,9 @@ tiny_http = "0.12"
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 time = { version = "0.3", features = ["formatting"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+rfd = { version = "0.16", default-features = false }
+
 # Screenshot capture of the assistant windows for the operation timeline.
 # Windows only: WebView2's CapturePreview renders even while the window is
 # hidden, so a background run is still traceable. Versions must match the ones

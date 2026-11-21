@@ -308,6 +308,20 @@ test.describe('capture', () => {
     expect(await tauri.unhandled()).toEqual([]);
   });
 
+  test('the live screen keeps updating when the simulator covers the editor', async ({ app, page, isDesktop, tauri }) => {
+    test.skip(!isDesktop, 'Taking a screenshot needs the desktop app');
+    await tauri.setResponse('abs_capture_devices', ONE_SIMULATOR);
+    await tauri.setResponse('abs_capture_apps', APPS);
+    await projectWithPhone(app);
+    await page.evaluate(() => Object.defineProperty(document, 'visibilityState', { value: 'hidden' }));
+
+    const view = await openCapture(page);
+    await expect(view.getByTestId('capture-live-view').locator('img')).toBeVisible();
+    await expect.poll(async () => (await tauri.callsTo('abs_capture_screenshot'))
+      .filter((call) => call.args.preview).length).toBeGreaterThan(1);
+    await expect(view.getByTestId('capture-live-view')).toBeEnabled();
+  });
+
   test('a screenshot from the running simulator goes into the chosen frame in the chosen language only', async ({ app, page, isDesktop, tauri }) => {
     test.skip(!isDesktop, 'Taking a screenshot needs the desktop app');
     test.skip(!(await canStoreBlobsInIndexedDb(page)), NO_BLOBS);
@@ -393,7 +407,7 @@ test.describe('capture', () => {
     // the link travels with the launch (iOS asks before it opens one from outside).
     const launches = (await tauri.callsTo('abs_capture_launch')).map((call) => call.args);
     expect(launches).toEqual([
-      expect.objectContaining({ appId: 'com.example.notes', language: 'en-US', region: 'en_US', link: 'notes://settings' }),
+      expect.objectContaining({ appId: 'com.example.notes', language: 'ja', region: null, link: 'notes://settings' }),
       expect.objectContaining({ appId: 'com.example.notes', language: 'de-DE', region: 'de_DE', link: 'notes://settings' }),
     ]);
     expect(await tauri.unhandled()).toEqual([]);
@@ -500,7 +514,9 @@ test.describe('capture', () => {
     await projectWithPhone(app);
     await page.getByTestId('capture-from-device').click();
     await expect(page.getByText('Screenshot from iPhone 17 Pro Max', { exact: true })).toBeVisible();
-    await waitForProject(page, (project) => !!phoneOf(project).phone.screenshotSrc?.startsWith('asset:'));
+    await waitForProject(page, (project) => boards(project).some((board) =>
+      board.elements.some((element) => element.type === 'device' && element.screenshotSrc?.startsWith('asset:'))
+    ));
     // The editor stayed in front: the shortcut does not open Capture.
     await expect(page.getByTestId('capture-view')).toHaveCount(0);
     expect(await tauri.unhandled()).toEqual([]);

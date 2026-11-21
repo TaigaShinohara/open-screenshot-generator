@@ -3,6 +3,7 @@ mod code_folders;
 mod codex;
 mod device_capture;
 mod devtools;
+mod export_dialog;
 mod growth_browser;
 mod mcp_server;
 mod migrate;
@@ -96,6 +97,7 @@ pub fn run() {
             mcp_server::abs_mcp_respond,
             mcp_server::abs_mcp_write_png,
             mcp_server::abs_write_export_png,
+            export_dialog::abs_pick_export_path,
             mcp_server::abs_mcp_bridge_nonce,
             claude_code::abs_claude_detect,
             claude_code::abs_claude_start,

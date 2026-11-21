@@ -37,6 +37,21 @@ function anchorDownload(href: string, fileName: string) {
 }
 
 /**
+ * Ask for a desktop save path before generating the file. The dialog grants
+ * the filesystem plugin access to the chosen path.
+ */
+export async function pickSavePath(fileName: string): Promise<string | null> {
+  const name = sanitizeFileName(fileName);
+  return pickExportPath(`Save ${splitName(name).stem}`, name);
+}
+
+export async function writeExportBlob(blob: Blob, path: string): Promise<string> {
+  const { writeFile } = await import('@tauri-apps/plugin-fs');
+  await writeFile(path, new Uint8Array(await blob.arrayBuffer()));
+  return path;
+}
+
+/**
  * Save a Blob to the user's machine.
  * Returns the chosen path in Tauri, null if the user cancelled the dialog,
  * and undefined on the web (browser downloads don't expose a path).
@@ -57,11 +72,7 @@ export async function saveBlobToDisk(
     return undefined;
   }
 
-  const [{ save }, { writeFile }] = await Promise.all([
-    import('@tauri-apps/plugin-dialog'),
-    import('@tauri-apps/plugin-fs'),
-  ]);
-
+  const { save } = await import('@tauri-apps/plugin-dialog');
   const { stem, ext } = splitName(fileName);
   const path = await save({
     defaultPath: fileName,
@@ -69,10 +80,7 @@ export async function saveBlobToDisk(
     title: `Save ${stem}`,
   });
   if (!path) return null;
-
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  await writeFile(path, bytes);
-  return path;
+  return writeExportBlob(blob, path);
 }
 
 /** Save a data: URL (e.g. from html-to-image) to the user's machine. */
@@ -84,8 +92,10 @@ export async function saveDataUrlToDisk(
     anchorDownload(dataUrl, sanitizeFileName(fileName));
     return undefined;
   }
+  const path = await pickSavePath(fileName);
+  if (!path) return null;
   const blob = await (await fetch(dataUrl)).blob();
-  return saveBlobToDisk(blob, fileName);
+  return writeExportBlob(blob, path);
 }
 
 /**
@@ -94,15 +104,18 @@ export async function saveDataUrlToDisk(
  * On the web returns undefined (multi-file exports fall back to individual
  * browser downloads, which need no destination).
  */
-export async function pickExportDirectory(
-  title?: string
-): Promise<string | null | undefined> {
+export async function pickExportDirectory(title: string): Promise<string | null | undefined> {
   if (!isTauri()) return undefined;
-  const { open } = await import('@tauri-apps/plugin-dialog');
-  // recursive: true widens the runtime fs scope to the folder's contents,
-  // which is what permits the writeFile calls that follow
-  const dir = await open({ directory: true, recursive: true, title });
-  return dir as string | null;
+  return pickExportPath(title);
+}
+
+async function pickExportPath(title: string, fileName?: string): Promise<string | null> {
+  const [{ invoke }, { getCurrentWindow }] = await Promise.all([
+    import('@tauri-apps/api/core'),
+    import('@tauri-apps/api/window'),
+  ]);
+  await getCurrentWindow().setFocus();
+  return invoke<string | null>('abs_pick_export_path', { title, fileName });
 }
 
 /** Write a Blob into a previously picked folder (Tauri only). */
@@ -111,13 +124,9 @@ export async function saveBlobToPath(
   dir: string,
   fileName: string
 ): Promise<string> {
-  const [{ writeFile }, { join }] = await Promise.all([
-    import('@tauri-apps/plugin-fs'),
-    import('@tauri-apps/api/path'),
-  ]);
+  const { join } = await import('@tauri-apps/api/path');
   const path = await join(dir, sanitizeFileName(fileName));
-  await writeFile(path, new Uint8Array(await blob.arrayBuffer()));
-  return path;
+  return writeExportBlob(blob, path);
 }
 
 /**

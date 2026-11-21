@@ -59,10 +59,9 @@ export function LiveView({ device, polling, frame, aspect, emptyText, onTake, ta
     const tick = async () => {
       let wait = 350;
       try {
-        if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-          const blob = await takeScreenshot(platform, id, true);
-          if (!stopped) show(blob);
-        }
+        // Capture stays open while the user operates the simulator in another window.
+        const blob = await takeScreenshot(platform, id, true);
+        if (!stopped) show(blob);
       } catch {
         // A device that went away or is busy: try again a little later.
         wait = 2000;

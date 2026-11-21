@@ -494,7 +494,7 @@ export function CaptureWorkspace({
   const shapeNote = (target: CaptureTarget, width: number, height: number, from: string): string | null => {
     const difference = shapeDifference(target.screenAspect, width, height);
     if (difference === null || difference < SHAPE_WARNING) return null;
-    return `The screen of ${from} is a different shape from this ${target.deviceLabel} frame, so the edges of the screenshot are cut off. A virtual ${target.deviceLabel} fits exactly.`;
+    return `The screen of ${from} is a different shape from this ${target.deviceLabel} frame, so the edges of the screenshot are cut off.`;
   };
 
   const place = (placements: ShotPlacement[], detail: string): boolean => {
