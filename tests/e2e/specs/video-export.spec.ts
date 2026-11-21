@@ -181,6 +181,33 @@ function expectColour(actual: Rgb, expected: Rgb, what: string): void {
 }
 
 test.describe('App Preview video export', () => {
+  test('cancelling the desktop save sheet skips encoding and writes no file', async ({ page, isDesktop, tauri }) => {
+    test.skip(!isDesktop, 'The browser does not choose a save path');
+    await recordFramePixels(page, [BACKGROUND_POINT]);
+    const editor = new Editor(page);
+    await editor.goto();
+    await waitForProjectStore(page);
+    await put(page, 'projects', seedProject());
+
+    await editor.goto('/');
+    await tauri.setSavePath(null);
+    await editor.startDialog.getByText('Video Frames', { exact: true }).click();
+    await expect(editor.startDialog).toBeHidden();
+    await editor.chooseFromMenu(editor.exportButton, /App preview video/i);
+    const dialog = page.getByRole('dialog').filter({ hasText: 'Export App Preview Video' });
+    const exportButton = dialog.getByRole('button', { name: 'Export Styled Video' });
+    await exportButton.click();
+    const save = await tauri.waitForCall('abs_pick_export_path');
+    expect(save.args.fileName).toMatch(/\.mp4$/);
+    await expect(exportButton).toBeEnabled();
+
+    const frameCount = await page.evaluate(
+      () => (window as unknown as { __framePixels: FramePixels[] }).__framePixels.length
+    );
+    expect(frameCount).toBe(0);
+    expect(await tauri.files()).toEqual([]);
+  });
+
   test('every layer lands in the frame where the board has it', async ({ page }) => {
     test.setTimeout(180_000);
     await recordFramePixels(page, [...SWATCHES.map((swatch) => swatch.at), BACKGROUND_POINT]);

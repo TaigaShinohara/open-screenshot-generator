@@ -58,7 +58,8 @@ async function exportedNames(
   count: number
 ): Promise<string[]> {
   if (isDesktop) {
-    const files = await tauri.waitForFiles(count, 120_000);
+    await expect.poll(async () => (await tauri.files()).length, { timeout: 120_000 }).toBeGreaterThanOrEqual(count);
+    const files = await tauri.files();
     return files.map((file) => file.path.split('/').pop() ?? file.path);
   }
   await expect.poll(() => downloads.length, { timeout: 120_000 }).toBeGreaterThanOrEqual(count);
@@ -195,7 +196,7 @@ test.describe('the export dialog', () => {
     await expect(progressDialog(page)).toBeHidden();
     expect(downloads).toHaveLength(0);
     expect(await tauri.files()).toEqual([]);
-    if (isDesktop) expect(await tauri.callsTo('plugin:dialog|save')).toEqual([]);
+    if (isDesktop) expect(await tauri.callsTo('abs_pick_export_path')).toEqual([]);
 
     // The canvas is still live, so a cancelled export cannot have wedged it.
     await expect(app.artboards).toHaveCount(1);
@@ -313,6 +314,16 @@ test.describe('exporting to a file', () => {
       .waitFor({ state: 'visible', timeout: 60_000 })
       .then(() => true)
       .catch(() => false);
+    // A covered WKWebView can stop sending animation frames mid-export.
+    await page.evaluate(() => {
+      const artboard = document.querySelector('[data-artboard-dom-id]');
+      if (!artboard) throw new Error('No artboard to export');
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 8;
+      canvas.getContext('2d')?.fillRect(0, 0, 8, 8);
+      artboard.appendChild(canvas);
+      window.requestAnimationFrame = () => 0;
+    });
     await app.exportDialog.getByRole('button', { name: 'Export', exact: true }).click();
     await expect(app.exportDialog).toBeHidden();
     expect(await progressSeen).toBe(true);
@@ -328,15 +339,12 @@ test.describe('exporting to a file', () => {
       expect(file.path).toBe(`/tmp/osg-e2e/${AS_IS_PNG}`);
       expect(file.bytes).toBeGreaterThan(1000);
 
-      const [save] = await tauri.callsTo('plugin:dialog|save');
-      const options = save.args.options as Record<string, unknown>;
+      const [save] = await tauri.callsTo('abs_pick_export_path');
       // The name the app suggests to the OS is the same one the browser build
       // downloads, which is what sanitizeFileName() exists to guarantee.
-      expect(options.defaultPath).toBe(AS_IS_PNG);
-      expect(options.title).toBe(`Save ${AS_IS_PNG.replace(/\.png$/, '')}`);
-      expect(options.filters).toEqual([{ name: 'PNG file', extensions: ['png'] }]);
-      // A single file goes through the save dialog, never the folder picker.
-      expect(await tauri.callsTo('plugin:dialog|open')).toEqual([]);
+      expect(save.args.fileName).toBe(AS_IS_PNG);
+      expect(save.args.title).toBe(`Save ${AS_IS_PNG.replace(/\.png$/, '')}`);
+      expect(await tauri.callsTo('abs_pick_export_path')).toHaveLength(1);
     } else {
       const path = await downloads[0].path();
       expect(statSync(path).size).toBeGreaterThan(1000);
@@ -392,12 +400,10 @@ test.describe('exporting to a file', () => {
 
     if (isDesktop) {
       // A batch picks one destination up front instead of asking per file.
-      const opens = await tauri.callsTo('plugin:dialog|open');
+      const opens = await tauri.callsTo('abs_pick_export_path');
       expect(opens).toHaveLength(1);
-      const openOptions = opens[0].args.options as Record<string, unknown>;
-      expect(openOptions.directory).toBe(true);
-      expect(openOptions.recursive).toBe(true);
-      expect(await tauri.callsTo('plugin:dialog|save')).toEqual([]);
+      expect(opens[0].args.title).toBe('Choose a folder for the exported artboards');
+      expect(opens[0].args.fileName).toBeUndefined();
       expect((await tauri.files()).map((file) => file.path)).toEqual([
         `/tmp/osg-e2e/${AS_IS_PNG}`,
         `/tmp/osg-e2e/${IPAD_13_PNG}`,
@@ -440,7 +446,8 @@ test.describe('the desktop dialogs cancelling', () => {
 
     // The board is still rendered and offered to the OS, and only the write is
     // skipped, so the sheet has to have been reached before nothing happened.
-    await tauri.waitForCall('plugin:dialog|save', 120_000);
+    const save = await tauri.waitForCall('abs_pick_export_path', 120_000);
+    expect(save.args.fileName).toBe(AS_IS_PNG);
     await expect(progressDialog(page)).toBeHidden({ timeout: 120_000 });
     expect(await tauri.files()).toEqual([]);
     expect(downloads).toHaveLength(0);
@@ -465,12 +472,13 @@ test.describe('the desktop dialogs cancelling', () => {
     await expect(fileCount(page)).toHaveText('2 PNG files');
     await app.exportDialog.getByRole('button', { name: 'Export', exact: true }).click();
 
-    await tauri.waitForCall('plugin:dialog|open', 60_000);
+    const picker = await tauri.waitForCall('abs_pick_export_path', 60_000);
+    expect(picker.args.fileName).toBeUndefined();
     await expect(app.exportDialog).toBeHidden();
     // The picker is asked before the first capture, so a cancel costs nothing:
     // no progress readout, no save sheet, no files.
     await expect(progressDialog(page)).toBeHidden();
-    expect(await tauri.callsTo('plugin:dialog|save')).toEqual([]);
+    expect(await tauri.callsTo('abs_pick_export_path')).toHaveLength(1);
     expect(await tauri.files()).toEqual([]);
     expect(downloads).toHaveLength(0);
 

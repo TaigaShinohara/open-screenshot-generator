@@ -84,6 +84,20 @@ function device(partial: Partial<CaptureDevice>): CaptureDevice {
   return { id: 'X', platform: 'ios', kind: 'simulator', name: 'iPhone 17 Pro', state: 'running', os: 'iOS 26.5', ...partial };
 }
 
+test('a measured 3D display fits its simulator even in a wide element box', () => {
+  const size = { width: 640, height: 1120 };
+  const targets = captureTargets([board('a', [
+    phone('posed', { size, styleType: '3d-left', pose3d: 'tilted' }),
+    phone('studio', { size, styleType: '3d-studio' }),
+    phone('flat', { size, styleType: 'normal' }),
+  ])]);
+  for (const target of targets.slice(0, 2)) {
+    assert.equal(shapeDifference(target.screenAspect, 1320, 2868), 0);
+    assert.ok((shapeDifference(target.screenAspect, 2868, 1320) ?? 0) > SHAPE_WARNING);
+  }
+  assert.ok((shapeDifference(targets[2].screenAspect, 1320, 2868) ?? 0) > SHAPE_WARNING);
+});
+
 test('each platform gets the language code it reads', () => {
   assert.deepEqual(appLanguageFor('de-DE', 'ios'), { language: 'de-DE', region: 'de_DE' });
   assert.deepEqual(appLanguageFor('zh-Hans', 'ios'), { language: 'zh-Hans' });

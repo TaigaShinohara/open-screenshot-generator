@@ -4,6 +4,7 @@
   "private": true,
   "license": "MIT",
   "scripts": {
+    "postinstall": "patch-package --error-on-fail",
     "dev": "next dev --turbopack -p 9002",
     "build": "node scripts/gen-ai-catalog.mjs && next build",
     "gen:ai-catalog": "node scripts/gen-ai-catalog.mjs",
@@ -73,7 +74,7 @@
     "dexie": "^3.2.7",
     "dotenv": "^16.5.0",
     "geist": "1.4.2",
-    "html-to-image": "^1.11.13",
+    "html-to-image": "1.11.13",
     "lucide-react": "^0.475.0",
     "mp4-muxer": "^5.2.2",
     "next": "15.5.29",

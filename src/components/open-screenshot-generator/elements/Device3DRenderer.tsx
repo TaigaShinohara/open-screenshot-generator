@@ -383,6 +383,14 @@ export function Device3DRenderer({ deviceType, side, screenshotSrc, objectFit = 
 
     const metrics = DEVICE_METRICS[deviceType] ?? measuredMetrics(deviceType) ?? DEFAULT_METRICS;
     const isWatch = deviceType === 'apple-watch';
+    const measured = measuredModelFor(deviceType);
+    const screenPoints = measured ? flatFaceOf(measured).screenPoints : null;
+    const inset = 2 * metrics.bezel;
+    // Keep the measured display's proportions inside any artboard box.
+    const nativeBodyHeight = screenPoints ? (1 - inset) * screenPoints[1] / screenPoints[0] + inset : null;
+    const bodyHeight = (boxAspect: number) => isWatch
+      ? WATCH_BODY_ASPECT
+      : nativeBodyHeight ?? THREE.MathUtils.clamp(poseAngles.bodyAspect ?? boxAspect, 0.3, 4);
     const isMacbook = deviceType === 'macbook';
     const isImac = deviceType === 'imac';
     const isMac = isMacbook || isImac;
@@ -611,9 +619,7 @@ export function Device3DRenderer({ deviceType, side, screenshotSrc, objectFit = 
       }
 
       const w = 1;
-      const h = isWatch
-        ? WATCH_BODY_ASPECT
-        : THREE.MathUtils.clamp(poseAngles.bodyAspect ?? aspect, 0.3, 4);
+      const h = bodyHeight(aspect);
       const t = metrics.thickness;
       const bevel = t * 0.22;
       const depth = t - 2 * bevel;
@@ -763,9 +769,7 @@ export function Device3DRenderer({ deviceType, side, screenshotSrc, objectFit = 
 
     const layoutCamera = (cw: number, ch: number) => {
       const aspect = cw / ch;
-      const h = isWatch
-        ? WATCH_BODY_ASPECT
-        : THREE.MathUtils.clamp(poseAngles.bodyAspect ?? ch / cw, 0.3, 4);
+      const h = bodyHeight(ch / cw);
       const tanV = Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV / 2));
       const margin = 1.08;
       // Fit the pose-rotated device exactly: a point at camera-space

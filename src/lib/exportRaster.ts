@@ -29,6 +29,8 @@
 // attribute covers a whole board. A raster reached through CSS instead
 // (background-image: url(...), mask-image) carries no decoding attribute and
 // would quietly reopen the hole on macOS, so keep artboard art in elements.
+// The html-to-image patch also lets cloned canvases load while animation
+// frames are paused, as happens when the simulator covers the editor.
 
 import { toPng, toSvg } from 'html-to-image';
 import type { Options } from 'html-to-image/lib/types';
@@ -153,13 +155,6 @@ export async function captureNodeToPng(node: HTMLElement, options: Options = {})
   // something this browser will parse, rasterize what the library built, so a
   // board that used to export still exports.
   const image = await loadSvgImage(patched).catch(() => loadSvgImage(svgDataUrl));
-  // decode() is a hint some engines resolve early; onload has already fired, so
-  // a rejection here means nothing beyond "no extra guarantee".
-  try {
-    await image.decode();
-  } catch {
-    // proceed with what onload gave us
-  }
 
   const width = options.width || nodeWidth(node);
   const height = options.height || nodeHeight(node);

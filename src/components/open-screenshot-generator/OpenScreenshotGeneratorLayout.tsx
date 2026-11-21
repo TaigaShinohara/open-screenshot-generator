@@ -1,10 +1,11 @@
 "use client";
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, useDeferredValue, useSyncExternalStore } from 'react';
+import { flushSync } from 'react-dom';
 import { captureNodeToPng } from '@/lib/exportRaster';
 import { updateStudioLive } from '@/lib/device3dStudioLive';
 import { preloadGoogleFonts } from '@/services/fontService';
 import { loadCustomFontFamilies, loadCustomFonts, useCustomFonts } from '@/services/customFonts';
-import { isTauri, sanitizeFileName, saveBlobToDisk, saveBlobToPath, saveDataUrlToDisk, saveDataUrlToPath, pickExportDirectory, openExternal, fetchWebviewCrashInfo } from '@/lib/desktop';
+import { isTauri, sanitizeFileName, saveBlobToDisk, saveBlobToPath, saveDataUrlToDisk, saveDataUrlToPath, pickExportDirectory, pickSavePath, writeExportBlob, openExternal, fetchWebviewCrashInfo } from '@/lib/desktop';
 import { analyzeArtboardForVideo, exportArtboardVideo, projectHasVideoContent, type ArtboardVideoInfo } from '@/lib/video/videoExport';
 import { getPlayback, stopPlayback } from '@/lib/video/playback';
 import { AUDIO_ACCEPT, saveAudio } from '@/lib/mediaStore';
@@ -6031,14 +6032,11 @@ export function OpenScreenshotGeneratorLayout() {
     return saved;
   };
 
-  // Two rAFs get past React's commit and the browser's next paint after a
-  // temporary format swap; the extra delay lets images decode and the
-  // three.js device scenes rebuild before capture.
-  const waitForCanvasToSettle = async (ms: number) => {
-    await new Promise<void>((resolve) =>
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-    );
-    await new Promise((resolve) => setTimeout(resolve, ms));
+  // Commit the export canvas even when the window is covered and WebKit pauses
+  // animation frames. Give images and 3D scenes time to settle before capture.
+  const prepareExportCanvas = async (boards: ArtboardState[]) => {
+    flushSync(() => setExportCanvasArtboards(boards));
+    await new Promise<void>((resolve) => setTimeout(resolve, 400));
   };
 
   // Export flow behind the ExportDialog: capture the canvas as-is and/or
@@ -6208,8 +6206,7 @@ export function OpenScreenshotGeneratorLayout() {
         // Swapped even when the projection is the base array by reference: the
         // canvas may be sitting on another language, and the export must show
         // the one it is capturing.
-        setExportCanvasArtboards(calculateArtboardPositions(projected));
-        await waitForCanvasToSettle(400);
+        await prepareExportCanvas(calculateArtboardPositions(projected));
 
         const localeTargets = scope(projected);
         if (asIs) {
@@ -6232,8 +6229,7 @@ export function OpenScreenshotGeneratorLayout() {
           });
           const { artboards: converted } = convertArtboardsToFormat(projected, preset);
           const repositioned = calculateArtboardPositions(converted);
-          setExportCanvasArtboards(repositioned);
-          await waitForCanvasToSettle(400);
+          await prepareExportCanvas(repositioned);
           saved.push(
             ...(await captureWithExportEvents(scopeForFormat(repositioned), startIndex, order, locale, preset.label))
           );
@@ -6366,8 +6362,7 @@ export function OpenScreenshotGeneratorLayout() {
       const list = preset
         ? calculateArtboardPositions(convertArtboardsToFormat(projected, preset).artboards)
         : calculateArtboardPositions(projected);
-      setExportCanvasArtboards(list);
-      await waitForCanvasToSettle(400);
+      await prepareExportCanvas(list);
       return await capturePass(list);
     } finally {
       setExportCanvasArtboards(null);
@@ -6437,9 +6432,8 @@ export function OpenScreenshotGeneratorLayout() {
     if (chosen.length === 0) return { videos: [], warnings: [] };
 
     isExportingRef.current = true;
-    setExportCanvasArtboards(list);
     try {
-      await waitForCanvasToSettle(400);
+      await prepareExportCanvas(list);
 
       const videos: PublishVideo[] = [];
       const warnings: string[] = [];
@@ -6603,30 +6597,43 @@ export function OpenScreenshotGeneratorLayout() {
       return [];
     }
 
-    let exportDir: string | null | undefined;
-    if (isTauri() && boards.length > 1) {
-      exportDir = await pickExportDirectory('Choose a folder for the exported videos');
-      if (exportDir === null) return [];
-    }
-
-    trackExportVideo({
-      fps: request.fps,
-      durationSeconds: request.durationSeconds,
-      sizeMode: request.sizeMode,
-      rawRecordingOnly: request.rawRecordingOnly,
-    });
-
-    const abort = new AbortController();
-    videoExportAbortRef.current = abort;
-    setIsVideoExporting(true);
     const orderPadWidth = Math.max(2, String(artboards.length).length);
+    const outputs = boards.map((board) => {
+      const orderPrefix = String(viewArtboards.indexOf(board) + 1).padStart(orderPadWidth, '0');
+      const usedPoster = request.allowPosterFallback && !videoInfos[board.id]?.hasVideo;
+      const suffix = !request.rawRecordingOnly
+        ? 'AppPreview'
+        : `${request.keepOverlays ? 'StoreReady_Text' : 'StoreReady'}${usedPoster ? '_PosterProof' : ''}`;
+      return { board, filename: `${orderPrefix}_${board.name.replace(/\s+/g, '_')}_${suffix}.mp4` };
+    });
     // What the canvas draws of each board's neighbours; it is showing viewArtboards.
     const spill = computeSpill(viewArtboards);
     // Same manifest contract as handleConfirmExport: the headless bridge needs
     // the names, not a toast.
     const saved: { filename: string; path?: string }[] = [];
     try {
-      for (const [index, board] of boards.entries()) {
+      let exportDir: string | null | undefined;
+      let savePath: string | null | undefined;
+      if (isTauri()) {
+        if (outputs.length === 1) {
+          savePath = await pickSavePath(outputs[0].filename);
+        } else {
+          exportDir = await pickExportDirectory('Choose a folder for the exported videos');
+        }
+        if (savePath === null || exportDir === null) return [];
+      }
+
+      trackExportVideo({
+        fps: request.fps,
+        durationSeconds: request.durationSeconds,
+        sizeMode: request.sizeMode,
+        rawRecordingOnly: request.rawRecordingOnly,
+      });
+      const abort = new AbortController();
+      videoExportAbortRef.current = abort;
+      setIsVideoExporting(true);
+
+      for (const [index, { board, filename }] of outputs.entries()) {
         const size =
           request.sizeMode === 'appstore-portrait'
             ? { width: 886, height: 1920 }
@@ -6660,20 +6667,11 @@ export function OpenScreenshotGeneratorLayout() {
               totalFrames: total,
             }),
         });
-        // Indexed in the same list the boards came from: board order is
-        // identical in every language, so the numbering is too.
-        const orderPrefix = String(viewArtboards.indexOf(board) + 1).padStart(orderPadWidth, '0');
-        // Distinct suffix per mode so the three renders of one board can sit
-        // in the same folder without overwriting each other.
-        const usedPoster = request.allowPosterFallback && !videoInfos[board.id]?.hasVideo;
-        const suffix = !request.rawRecordingOnly
-          ? 'AppPreview'
-          : `${request.keepOverlays ? 'StoreReady_Text' : 'StoreReady'}${usedPoster ? '_PosterProof' : ''}`;
-        const filename = `${orderPrefix}_${board.name.replace(/\s+/g, '_')}_${suffix}.mp4`;
         const savedPath = exportDir
           ? await saveBlobToPath(blob, exportDir, filename)
-          : await saveBlobToDisk(blob, filename);
-        if (savedPath === null) continue; // user cancelled this file's save dialog
+          : savePath
+            ? await writeExportBlob(blob, savePath)
+            : await saveBlobToDisk(blob, filename);
         saved.push(savedPath ? { filename, path: savedPath } : { filename });
         toast({
           title: 'Video Exported',

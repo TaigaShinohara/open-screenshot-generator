@@ -16,6 +16,8 @@ import type {
   VideoDeviceElementProps,
 } from '@/types/artboard';
 import { isCreativeBoard } from '@/lib/creative/specs';
+import { measuredModelFor } from '@/lib/device3dModels';
+import { isDevice3dStyle } from '@/lib/devicePerspective';
 import { getDeviceDescriptor, getDeviceScreenRect, type DevicePlatform } from '@/lib/deviceRegistry';
 import { projectArtboards } from '@/lib/i18n/project';
 
@@ -63,12 +65,15 @@ export function isOwnPicture(src: string | undefined): boolean {
 }
 
 function screenAspectOf(element: DeviceFrameElementProps | VideoDeviceElementProps): number | null {
+  if (element.deviceType === 'custom') return null;
+  const descriptor = getDeviceDescriptor(element.deviceType);
   if (element.type === 'device') {
+    if (isDevice3dStyle(element.styleType) && measuredModelFor(element.deviceType)) {
+      return descriptor.nativeAspect;
+    }
     const rect = getDeviceScreenRect(element);
     if (rect && rect.width > 0 && rect.height > 0) return rect.width / rect.height;
   }
-  if (element.deviceType === 'custom') return null;
-  const descriptor = getDeviceDescriptor(element.deviceType);
   return descriptor.nativeAspect > 0 ? descriptor.nativeAspect : null;
 }
 

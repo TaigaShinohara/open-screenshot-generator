@@ -730,6 +730,12 @@ export function tauriInitScript(config: TauriMockConfig): string {
         const suggested = (args.options && args.options.defaultPath) || 'untitled';
         return chosen.endsWith(sep) ? chosen + suggested : chosen;
       }
+      case 'abs_pick_export_path': {
+        if (!args.fileName) return state.config.openPath;
+        const chosen = state.config.savePath;
+        if (chosen === null) return null;
+        return chosen.endsWith(sep) ? chosen + args.fileName : chosen;
+      }
       case 'plugin:dialog|open':
         return state.config.openPath;
       case 'plugin:dialog|message':
